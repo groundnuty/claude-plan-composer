@@ -17,7 +17,7 @@ These aren't bugs in the model. They're structural consequences of generating a 
 ## Demo
 
 <!-- Replace the URL below after uploading your recording to asciinema.org -->
-[![asciicast](https://asciinema.org/a/EswYl1tNVehtLM0E.svg)](https://asciinema.org/a/EswYl1tNVehtLM0E)
+[![asciicast](https://asciinema.org/a/EswYl1tNVehtLM0E.png)](https://asciinema.org/a/EswYl1tNVehtLM0E)
 
 > Top pane: 4 parallel Claude sessions generating plan variants. Bottom pane: real-time monitor tracking progress. Then: interactive merge with Agent Teams debate, and the final merged plan.
 
