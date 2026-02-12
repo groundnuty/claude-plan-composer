@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Project-specific configuration for generate-plans.sh and merge-plans.sh.
+#
+# Edit this file to adapt the pipeline to your project.
+# For personal overrides, create config.local.yaml (gitignored).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Additional directories Claude might need outside WORK_DIR.
+# Passed as --add-dir flags. Missing directories are silently skipped.
+# Paths can be absolute or relative to the script directory ($SCRIPT_DIR).
+add_dirs: []
+  # - ../shared-libs
+  # - ../../other-repo
+
+# Prompt variants — each forces a different perspective on the same base prompt.
+# "baseline" should always have an empty value (no extra guidance).
+#
+# Customize these to match your domain. Good variant dimensions:
+#   - simplicity vs. completeness
+#   - code depth vs. architecture breadth
+#   - operational detail vs. design patterns
+variants:
+  baseline: ""
+
+  simplicity: |
+    ## Additional guidance
+    Prioritize simplicity — find the smallest possible MVP that still demonstrates
+    the full pipeline. Minimize dependencies and moving parts. Question whether each
+    component is truly needed. Fewer files is better.
+
+  framework-depth: |
+    ## Additional guidance
+    Focus on framework and library patterns. Show detailed code examples for each
+    pipeline phase. Include exact imports, error handling patterns, and how key
+    libraries work together. Show code, not just descriptions.
+
+  k8s-ops: |
+    ## Additional guidance
+    Focus on deployment depth and operability. Include exact deployment commands
+    with flags, resource configuration, environment setup, and operational
+    runbooks. Document infrastructure decisions with comparative data where
+    relevant.

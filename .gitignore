@@ -1,0 +1,16 @@
+# Generated plans (large, per-run artifacts)
+generated-plans/
+
+# Monitor temp files
+/tmp/claude-monitor-sizes.json
+
+# Local config overrides (personal add-dirs, domain-specific variants)
+config.local.yaml
+
+# Asciinema recordings (upload to asciinema.org, don't commit)
+demo/*.cast
+
+# Claude Code local settings
+.claude/
+
+configs/*
