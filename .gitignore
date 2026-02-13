@@ -9,6 +9,7 @@ config.local.yaml
 
 # Asciinema recordings (upload to asciinema.org, don't commit)
 demo/*.cast
+# demo/demo.gif is committed (used in README)
 
 # Claude Code local settings
 .claude/
