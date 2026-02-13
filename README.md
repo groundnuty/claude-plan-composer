@@ -14,12 +14,6 @@ Ask Claude to write an implementation plan and you'll get something impressive â
 
 These aren't bugs in the model. They're structural consequences of generating a plan from a single perspective. A human architect doesn't produce a plan in isolation either â€” they get feedback, defend trade-offs, and iterate against competing views.
 
-## Demo
-
-![demo](demo/demo.gif)
-
-> Top pane: 4 parallel Claude sessions generating plan variants. Bottom pane: real-time monitor tracking progress. Then: interactive merge with Agent Teams debate, and the final merged plan.
-
 ## The approach: parallel sessions with prompt variation, then structured merge
 
 This project forces multiple perspectives by running parallel Claude Code sessions, each with a **different prompt variant** that demands different trade-offs, then merging the best elements through structured comparison.
