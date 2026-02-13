@@ -26,32 +26,32 @@ These aren't bugs in the model. They're structural consequences of generating a 
 This project forces multiple perspectives by running parallel Claude Code sessions, each with a **different prompt variant** that demands different trade-offs, then merging the best elements through structured comparison.
 
 ```
-                         ┌─────────────────────┐
-                         │   Your prompt file   │
-                         │   (my-prompt.md)     │
-                         └────────┬────────────┘
-                                  │
-                    ┌─────────────┼─────────────┐
-                    │             │             │             │
-              ┌─────▼─────┐ ┌────▼──────┐ ┌───▼───────┐ ┌──▼────────┐
-              │ baseline  │ │ simplicity│ │ framework │ │  k8s-ops  │
-              │ (no extra │ │ (minimal  │ │  (deep    │ │ (deploy   │
-              │ guidance) │ │  MVP)     │ │  patterns)│ │  detail)  │
-              └─────┬─────┘ └────┬──────┘ └───┬───────┘ └──┬────────┘
-                    │             │             │             │
-                    └─────────────┼─────────────┘
-                                  │
-                         ┌────────▼────────────┐
-                         │   Merge phase       │
-                         │   (agent-team       │
-                         │    debate or        │
-                         │    automated)       │
-                         └────────┬────────────┘
-                                  │
-                         ┌────────▼────────────┐
-                         │   merged-plan.md    │
-                         │   (human review)    │
-                         └─────────────────────┘
+                          ┌─────────────────────┐
+                          │   Your prompt file   │
+                          │   (my-prompt.md)     │
+                          └──────────┬──────────┘
+                                     │
+              ┌──────────────┬───────┼───────┬──────────────┐
+              ▼              ▼       ▼       ▼              ▼
+        ┌──────────┐  ┌──────────┐ ┌──────────┐  ┌──────────────┐
+        │ baseline │  │simplicity│ │framework │  │   k8s-ops    │
+        │(no extra │  │(minimal  │ │ (deep    │  │  (deploy     │
+        │ guidance)│  │  MVP)    │ │ patterns)│  │   detail)    │
+        └────┬─────┘  └────┬─────┘ └────┬─────┘  └──────┬───────┘
+              │              │       │       │              │
+              └──────────────┴───────┼───────┴──────────────┘
+                                     ▼
+                          ┌──────────────────────┐
+                          │     Merge phase      │
+                          │     (agent-team      │
+                          │      debate or       │
+                          │      automated)      │
+                          └──────────┬───────────┘
+                                     ▼
+                          ┌──────────────────────┐
+                          │    merged-plan.md    │
+                          │    (human review)    │
+                          └──────────────────────┘
 ```
 
 **Phase 1 — Generate.** Four `claude -p` sessions run in parallel, each receiving the same base prompt plus a variant instruction that forces a specific lens:
