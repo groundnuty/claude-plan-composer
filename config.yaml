@@ -19,8 +19,22 @@ add_dirs: []
   # - ../shared-libs
   # - ../../other-repo
 
+# MCP server configuration file (JSON).
+# Gives Claude access to external knowledge sources (internal docs, wikis, APIs).
+# This reduces same-model blind spots by providing knowledge the model wasn't
+# trained on. Path is relative to script directory or absolute.
+mcp_config: ""
+
 # Prompt variants — each forces a different perspective on the same base prompt.
 # "baseline" should always have an empty value (no extra guidance).
+#
+# Each variant can be a simple guidance string or a map with model + guidance:
+#   simple:    variant_name: "guidance text"
+#   extended:  variant_name:
+#                model: sonnet          # override model for this variant
+#                guidance: "guidance text"
+# Per-variant models reduce same-model correlation (different models have
+# different biases). If no model is specified, the global MODEL is used.
 #
 # Default: 4 variants recommended. Research shows diminishing returns beyond 4
 # for same-model ensembles — diversity comes from prompt variation, not repetition.

@@ -128,7 +128,7 @@ The key requirement is that your prompt file gives Claude enough context to prod
 
 - **Bash scripts, not a library.** This is a configurable toolkit, not a polished SDK. It's intentionally simple — shell scripts you can read, modify, and extend.
 - **Cost: ~$20-60 per run.** Default 4 Opus sessions plus a merge session. Use `--debug` mode (single Sonnet session) to iterate on prompts cheaply before a full run.
-- **Same-model correlation is inherent.** Prompt variation reduces but doesn't eliminate correlated blind spots. If Claude doesn't know about your internal API, four variants of Claude still won't know about it.
+- **Same-model correlation is reducible, not eliminable.** Prompt variation reduces correlated blind spots but doesn't remove them entirely. Three mitigations help: (1) per-variant model overrides in `config.yaml` — different model sizes have different biases, (2) `work_dir` and `add_dirs` give Claude access to your codebase so it can read internal APIs directly, (3) `mcp_config` connects Claude to external knowledge sources (internal docs, wikis, search indexes) it wasn't trained on.
 - **The merge step has its own biases.** The LLM doing the merge may favor familiar patterns when adjudicating between plans. The Agent Teams debate mode helps but doesn't fully solve this.
 - **No automated quality scoring.** There's no programmatic way to evaluate whether the merged plan is "better." Quality assessment is a human judgment call.
 - **Requires Claude Code CLI** with API access (Max plan or direct API key). Sessions share org-level rate limits.

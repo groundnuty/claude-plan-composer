@@ -162,6 +162,8 @@ export CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
 # ─── Load project config (variants + add-dirs) ───────────────────────────
 ADD_DIRS=()
 declare -A VARIANTS
+declare -A VARIANT_MODELS
+CFG_MCP_CONFIG=""
 
 if $MULTI_FILE_MODE; then
     # Multi-file mode: each file IS a complete variant prompt.
@@ -188,32 +190,43 @@ fi
 
 if [ -n "$CONFIG_FILE" ]; then
     if $MULTI_FILE_MODE; then
-        # Multi-file: only load work_dir + add_dirs from config, skip variants.
+        # Multi-file: only load work_dir, add_dirs, mcp_config from config.
         eval "$(python3 -c "
 import yaml, shlex
 with open('$CONFIG_FILE') as f:
     cfg = yaml.safe_load(f)
 wd = str(cfg.get('work_dir') or '').strip()
 print(f'CFG_WORK_DIR={shlex.quote(wd)}')
+mcp = str(cfg.get('mcp_config') or '').strip()
+print(f'CFG_MCP_CONFIG={shlex.quote(mcp)}')
 dirs = cfg.get('add_dirs') or []
 parts = [shlex.quote(str(d)) for d in dirs]
 print('ADD_DIRS=(' + ' '.join(parts) + ')')
 ")"
     else
-        # Single-file: load work_dir, add_dirs, and variants from config.
+        # Single-file: load work_dir, add_dirs, mcp_config, and variants.
         eval "$(python3 -c "
 import yaml, shlex
 with open('$CONFIG_FILE') as f:
     cfg = yaml.safe_load(f)
 wd = str(cfg.get('work_dir') or '').strip()
 print(f'CFG_WORK_DIR={shlex.quote(wd)}')
+mcp = str(cfg.get('mcp_config') or '').strip()
+print(f'CFG_MCP_CONFIG={shlex.quote(mcp)}')
 dirs = cfg.get('add_dirs') or []
 parts = [shlex.quote(str(d)) for d in dirs]
 print('ADD_DIRS=(' + ' '.join(parts) + ')')
 variants = cfg.get('variants') or {'baseline': ''}
-for name, guidance in variants.items():
-    val = str(guidance).strip() if guidance else ''
-    print(f'VARIANTS[{name}]={shlex.quote(val)}')
+for name, val in variants.items():
+    if isinstance(val, dict):
+        guidance = str(val.get('guidance') or '').strip()
+        model = str(val.get('model') or '').strip()
+    else:
+        guidance = str(val).strip() if val else ''
+        model = ''
+    print(f'VARIANTS[{name}]={shlex.quote(guidance)}')
+    if model:
+        print(f'VARIANT_MODELS[{name}]={shlex.quote(model)}')
 ")"
     fi
 elif ! $MULTI_FILE_MODE; then
@@ -236,6 +249,20 @@ elif [ -n "${CFG_WORK_DIR:-}" ]; then
 else
     WORK_DIR=$(mktemp -d)
     WORK_DIR_IS_TEMP=true
+fi
+
+# ─── Resolve MCP config ──────────────────────────────────────────────────
+MCP_CONFIG=""
+if [ -n "${CFG_MCP_CONFIG:-}" ]; then
+    if [[ "$CFG_MCP_CONFIG" != /* ]]; then
+        MCP_CONFIG="$SCRIPT_DIR/$CFG_MCP_CONFIG"
+    else
+        MCP_CONFIG="$CFG_MCP_CONFIG"
+    fi
+    if [ ! -f "$MCP_CONFIG" ]; then
+        echo "Warning: mcp_config file not found: $MCP_CONFIG (skipping)"
+        MCP_CONFIG=""
+    fi
 fi
 
 # NOTE: output_instruction is set per-variant inside the loop (needs md_file path)
@@ -324,13 +351,19 @@ Rules:
         full_prompt="${BASE_PROMPT}${variant_value}${SHARED_CONTEXT}${output_instruction}"
     fi
 
-    # Build --add-dir flags for directories that exist
-    add_dir_flags=()
+    # Per-variant model override (falls back to global $MODEL)
+    variant_model="${VARIANT_MODELS[$variant]:-$MODEL}"
+
+    # Build extra flags: --add-dir, --mcp-config
+    extra_flags=()
     for dir in "${ADD_DIRS[@]}"; do
         if [ -d "$dir" ]; then
-            add_dir_flags+=(--add-dir "$dir")
+            extra_flags+=(--add-dir "$dir")
         fi
     done
+    if [ -n "$MCP_CONFIG" ]; then
+        extra_flags+=(--mcp-config "$MCP_CONFIG")
+    fi
 
     # Run from WORK_DIR so all repos within it are accessible to Claude.
     # If WORK_DIR is a temp dir, Claude has no project files to read.
@@ -345,11 +378,11 @@ Rules:
         CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000 \
         timeout "$TIMEOUT_SECS" \
         claude -p "$full_prompt" \
-            --model "$MODEL" \
+            --model "$variant_model" \
             --output-format text \
             --max-turns "$MAX_TURNS" \
             --dangerously-skip-permissions \
-            "${add_dir_flags[@]}" \
+            "${extra_flags[@]}" \
             > "$logfile" 2>&1) &
 
     PIDS[$variant]=$!

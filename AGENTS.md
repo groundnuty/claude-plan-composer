@@ -31,8 +31,14 @@ Variant prompts and additional directories are defined in YAML config files.
 # config.yaml
 work_dir: ""          # empty = temp dir (no file access); set for codebase plans
 add_dirs: []          # extra dirs beyond work_dir
+mcp_config: ""        # MCP server config JSON — external knowledge sources
 
 # 4 variants recommended (see research/number-of-llms-sessions.md)
+# Simple form: variant_name: "guidance"
+# Extended form with per-variant model override:
+#   variant_name:
+#     model: sonnet
+#     guidance: "guidance text"
 variants:
   baseline: ""
   simplicity: |
@@ -61,6 +67,7 @@ Merge prompts (dimensions, role, output goal) are configured via `merge-config.y
 ```yaml
 # merge-config.yaml
 work_dir: ""          # empty = temp dir; set for codebase-aware merge
+mcp_config: ""        # MCP server config JSON
 project_description: "the project"
 role: "an expert analyst"
 dimensions:

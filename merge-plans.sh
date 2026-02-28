@@ -84,6 +84,7 @@ import yaml, shlex, sys
 
 defaults = {
     'work_dir': '',
+    'mcp_config': '',
     'project_description': 'the project',
     'role': 'an expert analyst',
     'dimensions': [
@@ -110,6 +111,8 @@ else:
 
 wd = str(cfg.get('work_dir') or '').strip()
 print(f'CFG_WORK_DIR={shlex.quote(wd)}')
+mcp = str(cfg.get('mcp_config') or '').strip()
+print(f'CFG_MCP_CONFIG={shlex.quote(mcp)}')
 print(f'MCFG_PROJECT={shlex.quote(str(cfg[\"project_description\"]))}')
 print(f'MCFG_ROLE={shlex.quote(str(cfg[\"role\"]))}')
 print(f'MCFG_ADVOCATE={shlex.quote(str(cfg[\"advocate_instructions\"]).strip())}')
@@ -135,6 +138,20 @@ elif [ -n "${CFG_WORK_DIR:-}" ]; then
 else
     WORK_DIR=$(mktemp -d)
     WORK_DIR_IS_TEMP=true
+fi
+
+# ─── Resolve MCP config ──────────────────────────────────────────────────
+MCP_CONFIG=""
+if [ -n "${CFG_MCP_CONFIG:-}" ]; then
+    if [[ "$CFG_MCP_CONFIG" != /* ]]; then
+        MCP_CONFIG="$SCRIPT_DIR/$CFG_MCP_CONFIG"
+    else
+        MCP_CONFIG="$CFG_MCP_CONFIG"
+    fi
+    if [ ! -f "$MCP_CONFIG" ]; then
+        echo "Warning: mcp_config file not found: $MCP_CONFIG (skipping)"
+        MCP_CONFIG=""
+    fi
 fi
 
 echo "  Merge config: ${MERGE_CONFIG_FILE:-defaults}"
@@ -212,9 +229,15 @@ PROMPT_FOOTER_EOF
 
     # Interactive mode: no -p flag. Pass initial prompt as positional argument.
     # exec replaces shell — Claude runs interactively, user can debate.
+    mcp_flags=()
+    if [ -n "$MCP_CONFIG" ]; then
+        mcp_flags+=(--mcp-config "$MCP_CONFIG")
+    fi
+
     exec env CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 \
         CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000 \
         claude --model "$MODEL" \
+        "${mcp_flags[@]}" \
         "Read the merge prompt at $merge_prompt_file and follow its instructions. The plan files are in $RUN_DIR/."
 
 # ─── Simple headless merge ─────────────────────────────────────────────────
@@ -284,6 +307,11 @@ Rules:
     # --dangerously-skip-permissions: Required for headless -p mode.
     #   Without it, Write tool is denied ("you haven't granted permissions yet")
     #   because there's no interactive user to approve.
+    mcp_flags=()
+    if [ -n "$MCP_CONFIG" ]; then
+        mcp_flags+=(--mcp-config "$MCP_CONFIG")
+    fi
+
     (cd "$WORK_DIR" && \
         CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000 \
         timeout "$TIMEOUT_SECS" \
@@ -292,6 +320,7 @@ Rules:
             --output-format text \
             --max-turns 30 \
             --dangerously-skip-permissions \
+            "${mcp_flags[@]}" \
             > "$logfile" 2>&1) || true
     # || true: prevent set -e from killing the script on failure.
     # We validate the output file below instead.

@@ -10,6 +10,10 @@
 # Override per-run: WORK_DIR=/path ./merge-plans.sh ...
 work_dir: ""
 
+# MCP server configuration file (JSON).
+# Gives Claude access to external knowledge during merge (e.g., verify against docs).
+mcp_config: ""
+
 # Short description of what these plans are about.
 # Used in the intro prompt to give Claude context.
 project_description: "the project"
