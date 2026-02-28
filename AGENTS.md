@@ -6,19 +6,73 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is an **LLM plan composition toolkit** — a set of bash scripts that orchestrate multiple parallel Claude Code sessions to generate diverse implementation plans, then merge the best elements into a single plan. It implements a research-backed "best-of-N with prompt variation" pattern.
 
-The domain context is HyperFlow (scientific workflow engine) and 1000genome workflow deployment on Kubernetes, but the scripts are general-purpose and work with any prompt file.
+The scripts are domain-agnostic. Domain-specific configuration lives in `config.yaml` (single-file mode) or as separate prompt files (multi-file mode). Project-specific configs can be kept in a private `projects/` git submodule.
 
 ## Pipeline
 
-The workflow is a two-phase pipeline:
-
-1. **Generate** (`generate-plans.sh`): Launches 4 parallel `claude -p` sessions, each with a different prompt variant (baseline, simplicity, framework-depth, k8s-ops). Each session researches the codebase and writes a plan to a file via the Write tool.
+1. **Generate** (`generate-plans.sh`): Launches parallel `claude -p` sessions, each with a different prompt. Two modes:
+   - **Single-file**: One prompt + variant guidance from `config.yaml` (baseline, simplicity, framework-depth, k8s-ops).
+   - **Multi-file**: Each prompt file is a standalone variant. Supports `--context=shared.md` to append common context to all prompts.
+   Each session researches the codebase and writes a plan to a file via the Write tool.
 
 2. **Merge** (`merge-plans.sh`): Takes the generated plans and produces a merged plan. Two modes:
    - `agent-teams` (default): Interactive Claude session with Agent Teams — spawns advocate agents that debate each plan, then the lead synthesizes.
    - `simple`: Headless `claude -p` that reads all plans inline and produces a merged plan.
 
-3. **Monitor** (`monitor-sessions.sh`): Real-time dashboard showing running Claude sessions — tracks PID, variant, transcript size, tool calls, subagents, token usage, context window utilization, compactions, and last action. Uses Python to parse JSONL transcripts from `~/.claude/projects/`.
+3. **Monitor** (`monitor-sessions.sh`): Real-time dashboard showing running Claude sessions — tracks PID, variant, transcript size, tool calls, subagents, token usage, context window utilization, compactions, and last action. Parses JSONL transcripts from `~/.claude/projects/`. Auto-exits in `--watch` mode when all sessions finish.
+
+## Configuration
+
+Variant prompts and additional directories are defined in YAML config files.
+
+**Priority**: `CONFIG` env var > `config.local.yaml` > `config.yaml`
+
+```yaml
+# config.yaml
+add_dirs:
+  - ../shared-libs
+
+variants:
+  baseline: ""
+  simplicity: |
+    ## Additional guidance
+    Prioritize simplicity...
+  framework-depth: |
+    ## Additional guidance
+    Focus on framework patterns...
+  k8s-ops: |
+    ## Additional guidance
+    Focus on deployment depth...
+```
+
+- `config.yaml` — generic defaults (committed to repo)
+- `config.local.yaml` — personal overrides (gitignored)
+- `projects/` — optional git submodule for project-specific configs (private)
+
+Usage: `CONFIG=projects/hyperflow/config.yaml ./generate-plans.sh my-prompt.md`
+
+### Merge Configuration
+
+Merge prompts (dimensions, role, output goal) are configured via `merge-config.yaml`.
+
+**Priority**: `MERGE_CONFIG` env var > `merge-config.local.yaml` > `merge-config.yaml`
+
+```yaml
+# merge-config.yaml
+project_description: "the project"
+role: "an expert analyst"
+dimensions:
+  - Approach and strategy
+  - Scope and priorities
+  - Technical depth and specificity
+advocate_instructions: |
+  Argue for its approach in each dimension...
+output_goal: |
+  The merged plan must be standalone...
+output_title: "Merged Plan"
+```
+
+Usage: `MERGE_CONFIG=projects/hackathon/merge-config.yaml ./merge-plans.sh generated-plans/latest`
 
 ## Commands
 
@@ -28,7 +82,14 @@ The workflow is a two-phase pipeline:
 
 # Generate with overrides
 MODEL=sonnet ./generate-plans.sh my-prompt.md
-MAX_TURNS=50 TIMEOUT_SECS=1800 ./generate-plans.sh my-prompt.md
+CONFIG=projects/hyperflow/config.yaml ./generate-plans.sh my-prompt.md
+
+# Multi-file mode (each file = one variant)
+./generate-plans.sh prompt-a.md prompt-b.md prompt-c.md prompt-d.md
+
+# Multi-file with shared context appended to each prompt
+./generate-plans.sh --context=projects/agentregistry/prompts/00-common-context.md \
+  projects/agentregistry/prompts/0[1-4]-*.md
 
 # Debug mode: single variant, sonnet, fast
 ./generate-plans.sh --debug my-prompt.md           # baseline only
@@ -40,41 +101,46 @@ MAX_TURNS=50 TIMEOUT_SECS=1800 ./generate-plans.sh my-prompt.md
 # Merge plans (headless, automated)
 MERGE_MODE=simple ./merge-plans.sh generated-plans/<prompt-name>/latest
 
+# Merge with project-specific config
+MERGE_CONFIG=projects/agentregistry/merge-config.yaml ./merge-plans.sh generated-plans/multi-*/latest
+
 # Monitor running sessions
 ./monitor-sessions.sh              # one-shot table
 ./monitor-sessions.sh --watch      # refresh every 15s
-./monitor-sessions.sh --watch 5    # refresh every 5s
+./monitor-sessions.sh --watch 5    # refresh every 5s (auto-exits when done)
 ```
 
 ## Output Structure
 
 ```
+# Single-file mode:
 generated-plans/<prompt-name>/<timestamp>/
   plan-baseline.md          # unguided variant
   plan-simplicity.md        # minimal MVP focus
   plan-framework-depth.md   # detailed code patterns
-  plan-k8s-ops.md           # K8s deployment focus
+  plan-k8s-ops.md           # deployment focus
+
+# Multi-file mode:
+generated-plans/multi-<HHMMSS>/<timestamp>/
+  plan-01-codebase-surgeon.md    # variant name = filename
+  plan-02-protocol-architect.md
+  ...
+
+# Common:
   plan-*.log                # session stdout+stderr (for debugging)
   merge-prompt.md           # generated merge instructions (agent-teams mode)
   merged-plan.md            # final merged output
-generated-plans/<prompt-name>/latest -> <timestamp>   # symlink
+generated-plans/<name>/latest -> <timestamp>   # symlink
 ```
 
 ## Key Design Decisions
 
 - **4 variants, not more**: Research shows diminishing returns from same-model ensembles (arXiv:2506.07962). Diversity comes from prompt variation, not repetition. See `research/number-of-llms-sessions.md`.
 - **Write tool for output capture**: `--output-format text` only captures the LAST assistant message. Multi-turn research sessions lose intermediate content. The prompt instructs Claude to write the complete plan via the Write tool.
-- **CWD is the hyperflow/ parent directory**: Sessions run from `../../` so all sibling repos are within the sandbox tree. This fixes subagent file access — `--add-dir` flags don't propagate to subagents.
-- **`CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000`**: Overrides the user's shell default of 6000, which truncates plans.
+- **WORK_DIR override**: Sessions run from `WORK_DIR` (default: `../../`, the common parent) so all sibling repos are within the sandbox tree. `--add-dir` flags don't propagate to subagents, so CWD must encompass all needed files.
+- **`CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000`**: Overrides any shell default, which may truncate plans.
 - **`--dangerously-skip-permissions`**: Required for headless `-p` mode where no interactive user can approve tool use.
-
-## Prompt Variants
-
-Defined as associative array `VARIANTS` in `generate-plans.sh`:
-- `baseline`: No additional guidance — model's default interpretation
-- `simplicity`: Forces smallest MVP trade-offs, fewer dependencies
-- `framework-depth`: Deep mcp-agent framework patterns, code examples, imports
-- `k8s-ops`: K8s deployment specifics, helm/kubectl commands, kr8s async patterns
+- **Monitor variant detection**: Uses output file path matching (`plan-baseline.md`, etc.) which works regardless of prompt content. Falls back to prompt text matching for legacy compatibility.
 
 ## Environment Variables
 
@@ -83,9 +149,34 @@ Defined as associative array `VARIANTS` in `generate-plans.sh`:
 | `MODEL` | `opus` | `sonnet` | Claude model |
 | `MAX_TURNS` | `80` | `20` | Max API round-trips per session |
 | `TIMEOUT_SECS` | `3600` | `600` | Hard kill timeout |
+| `WORK_DIR` | `../../` | `../../` | CWD for Claude sessions |
+| `CONFIG` | — | — | Path to YAML config file |
 | `MERGE_MODE` | `agent-teams` | — | `agent-teams` or `simple` |
+| `MERGE_CONFIG` | — | — | Path to merge YAML config file |
 | `DEBUG` | — | `1` | Enable debug mode |
-| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | `128000` | `128000` | Forced override |
+
+## Project-Specific Configs (`projects/` submodule)
+
+Project-specific prompts, variant configs, and merge configs live in an optional private git submodule at `projects/`. This keeps the public repo generic.
+
+```
+projects/                              # git submodule (private)
+  hackathon/merge-config.yaml          # idea synthesis merge dimensions
+  hyperflow/config.yaml                # HyperFlow variant prompts + add_dirs
+  hyperflow/merge-config.yaml          # HyperFlow merge dimensions
+  agentregistry/merge-config.yaml      # agentregistry merge dimensions
+  agentregistry/prompts/               # multi-file prompts with shared context
+```
+
+Setup: `git submodule update --init` after cloning. The toolkit works without the submodule — it falls back to `config.yaml` and `merge-config.yaml` defaults.
+
+## Demo Recording
+
+The `demo/` directory contains tools for recording terminal demos:
+- `record-demo.sh` — tmux-based script that sets up split panes (generate + monitor)
+- `demo.md` — instructions for recording and post-processing
+
+Usage: `asciinema rec demo.cast -c "MODEL=sonnet MAX_TURNS=8 ./demo/record-demo.sh"`
 
 ## Research Notes
 

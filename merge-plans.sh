@@ -18,6 +18,7 @@ set -euo pipefail
 #   ./merge-plans.sh generated-plans/20260212-030000                 # specific run
 #   MERGE_MODE=simple ./merge-plans.sh generated-plans/latest        # headless
 #   MODEL=sonnet MERGE_MODE=simple ./merge-plans.sh generated-plans/latest
+#   MERGE_CONFIG=my-merge.yaml ./merge-plans.sh generated-plans/latest
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -59,19 +60,66 @@ echo ""
 MODEL="${MODEL:-opus}"
 MERGE_MODE="${MERGE_MODE:-agent-teams}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-3600}"
-
-# SANDBOX FIX: Run claude from this common parent directory.
-# All repos (1000genome/, hyperflow-k8s-deployment/, hyperflow/) are under it.
-# This ensures both the parent session AND subagents can read all files.
-WORK_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-
-# CRITICAL: Override the global CLAUDE_CODE_MAX_OUTPUT_TOKENS unconditionally.
-# ~/.zshrc sets it to 6000 — far too low for merged plans (20K-40K tokens).
-# Must use = not :- because the var IS set (to 6000) in the shell environment.
+WORK_DIR="${WORK_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
 
 # Output file (absolute path — works from any CWD)
 merge_md="$RUN_DIR/merged-plan.md"
+
+# ─── Load merge config ───────────────────────────────────────────────────
+# Priority: MERGE_CONFIG env var > merge-config.local.yaml > merge-config.yaml
+MERGE_CONFIG_FILE="${MERGE_CONFIG:-}"
+if [ -n "$MERGE_CONFIG_FILE" ] && [[ "$MERGE_CONFIG_FILE" != /* ]]; then
+    MERGE_CONFIG_FILE="$SCRIPT_DIR/$MERGE_CONFIG_FILE"
+fi
+if [ -z "$MERGE_CONFIG_FILE" ] && [ -f "$SCRIPT_DIR/merge-config.local.yaml" ]; then
+    MERGE_CONFIG_FILE="$SCRIPT_DIR/merge-config.local.yaml"
+elif [ -z "$MERGE_CONFIG_FILE" ] && [ -f "$SCRIPT_DIR/merge-config.yaml" ]; then
+    MERGE_CONFIG_FILE="$SCRIPT_DIR/merge-config.yaml"
+fi
+
+# Parse merge config with defaults for every field
+eval "$(python3 -c "
+import yaml, shlex, sys
+
+defaults = {
+    'project_description': 'the project',
+    'role': 'an expert analyst',
+    'dimensions': [
+        'Approach and strategy',
+        'Scope and priorities',
+        'Technical depth and specificity',
+        'Architecture and structure',
+        'Risk assessment and trade-offs',
+        'Actionability and next steps',
+    ],
+    'advocate_instructions': 'Argue for its approach in each dimension. Challenge the other advocates where yours is stronger. Concede where yours is weaker. Be specific — cite exact sections and trade-offs.',
+    'output_goal': 'The merged plan must be standalone — someone should be able to act on it without referencing the source plans.',
+    'output_title': 'Merged Plan',
+}
+
+cfg_file = '$MERGE_CONFIG_FILE'
+if cfg_file:
+    with open(cfg_file) as f:
+        cfg = yaml.safe_load(f) or {}
+    for k, v in defaults.items():
+        cfg.setdefault(k, v)
+else:
+    cfg = defaults
+
+print(f'MCFG_PROJECT={shlex.quote(str(cfg[\"project_description\"]))}')
+print(f'MCFG_ROLE={shlex.quote(str(cfg[\"role\"]))}')
+print(f'MCFG_ADVOCATE={shlex.quote(str(cfg[\"advocate_instructions\"]).strip())}')
+print(f'MCFG_GOAL={shlex.quote(str(cfg[\"output_goal\"]).strip())}')
+print(f'MCFG_TITLE={shlex.quote(str(cfg[\"output_title\"]))}')
+
+# Dimensions as a formatted list
+dims = cfg.get('dimensions', defaults['dimensions'])
+dim_list = chr(10).join(f'   - {d}' for d in dims)
+print(f'MCFG_DIMENSIONS={shlex.quote(dim_list)}')
+")"
+
+echo "  Merge config: ${MERGE_CONFIG_FILE:-defaults}"
 
 # ─── Agent Teams merge ─────────────────────────────────────────────────────
 
@@ -85,7 +133,7 @@ if [ "$MERGE_MODE" = "agent-teams" ]; then
     cat > "$merge_prompt_file" << PROMPT_HEADER_EOF
 # Agent Teams Merge — Competing Advocates
 
-I have generated multiple implementation plans for the HyperFlow Conductor.
+I have generated multiple plans for ${MCFG_PROJECT}.
 Each plan was generated with a different focus. Your job is to merge the
 best elements into one final plan.
 
@@ -102,14 +150,12 @@ PROMPT_HEADER_EOF
         ((advocate_num++)) || true
         cat >> "$merge_prompt_file" << EOF
 - **Advocate ${advocate_num} (${variant_name})**: Read \`${plan_file}\` and become
-  its champion. Argue for its approach in each dimension. Challenge the other
-  advocates' plans where yours is stronger. Concede where yours is weaker.
-  Be specific — cite exact sections, trade-offs, and code examples.
+  its champion. ${MCFG_ADVOCATE}
 
 EOF
     done
 
-    # Use unquoted heredoc so $merge_md expands to absolute path
+    # Use unquoted heredoc so $merge_md and config vars expand
     cat >> "$merge_prompt_file" << PROMPT_FOOTER_EOF
 
 ## Team lead role
@@ -117,18 +163,11 @@ EOF
 You (the lead) will:
 1. Have each advocate present their plan's strengths (2-3 min each)
 2. Facilitate a structured debate across these dimensions:
-   - Staging strategy (stages, granularity, boundaries)
-   - MVP scope (what's in/out, validation gates)
-   - K8s testing strategy (provider, client, fixtures)
-   - Deployment detail (steps, commands, specificity)
-   - Code architecture (package layout, modularity, models)
-   - Reference documentation (academic papers, HyperFlow internals)
-   - Implementation planning (PR breakdown, acceptance criteria)
-   - Workflow delivery mechanism
+${MCFG_DIMENSIONS}
 3. After the debate, produce:
    - A comparison table with the winner per dimension + justification
    - A COMPLETE merged plan taking the best of each
-   - The merged plan must be standalone — a developer implements from it alone
+   - ${MCFG_GOAL}
 
 ## Constraints for advocates
 - Use delegate mode — do NOT implement anything yourself, only coordinate
@@ -137,7 +176,8 @@ You (the lead) will:
 - Each advocate must identify at least 2 strengths in a COMPETING plan
 
 ## Output (CRITICAL)
-Write the final merged plan to this exact file path using the Write tool:
+Write the final merged plan (titled "${MCFG_TITLE}") to this exact file path
+using the Write tool:
   ${merge_md}
 PROMPT_FOOTER_EOF
 
@@ -168,31 +208,19 @@ elif [ "$MERGE_MODE" = "simple" ]; then
     echo ""
 
     # Build prompt with all plans inline
-    MERGE_PROMPT="You are an expert technical architect. Below are ${#plans[@]} implementation
-plans for the same project, each generated with different focus areas.
+    MERGE_PROMPT="You are ${MCFG_ROLE}. Below are ${#plans[@]} plans
+for ${MCFG_PROJECT}, each generated with different focus areas.
 
 Your task:
 1. Produce a COMPARISON TABLE for each dimension:
-   - Staging strategy (number of stages, granularity, boundaries)
-   - MVP scope (what's in/out, validation gates)
-   - K8s testing strategy (provider, Python client, fixtures)
-   - Deployment detail (steps, commands, specificity)
-   - Code architecture (package layout, modularity, models)
-   - Reference documentation (academic papers, external refs, HyperFlow internals)
-   - Implementation planning (PR breakdown, acceptance criteria)
-   - Workflow delivery mechanism
+${MCFG_DIMENSIONS}
 
 2. For each dimension, identify the WINNER with a one-sentence justification.
 
 3. Produce a MERGED PLAN that takes the best of each:
    - Use the winner's approach for each dimension
    - Resolve any conflicts between dimensions coherently
-   - The merged plan should be a complete, standalone implementation blueprint
-   - Include all sections from the original prompt (stages, code examples,
-     testing plan, Makefile, PR breakdown, risks, etc.)
-
-IMPORTANT: The merged plan must be COMPLETE and ACTIONABLE — a developer
-should be able to implement from it without referencing the source plans.
+   - ${MCFG_GOAL}
 
 "
 
@@ -222,7 +250,7 @@ Rules:
 1. Read and analyze ALL plans above first
 2. Then use the Write tool ONCE to create the file at the path above with
    the ENTIRE merged plan content
-3. Start the file content with '# HyperFlow Conductor Implementation Plan (Merged)'
+3. Start the file content with '# ${MCFG_TITLE}'
 4. Include ALL sections in that single Write call — do not split across
    multiple Write calls
 5. Do NOT write to .claude/plans/ or any other path — ONLY the path above
@@ -267,7 +295,7 @@ Rules:
         echo "  Next steps:"
         echo "    1. Review: less $merge_md"
         echo "    2. Iterate: claude --resume"
-        echo "    3. Adopt:   cp $merge_md ../.claude/plans/hyperflow-conductor.md"
+        echo "    3. Adopt:   cp $merge_md <your-project>/.claude/plans/"
     else
         echo "  ✗ Merge failed — plan file not created (Claude didn't use Write tool)"
         echo "    Check: $logfile"

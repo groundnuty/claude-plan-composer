@@ -31,12 +31,22 @@ set -euo pipefail
 #   repos are within the CWD sandbox tree.
 #
 # Usage:
-#   ./generate-plans.sh <prompt-file>                  # all 4 variants
-#   ./generate-plans.sh initial-project-promt.md       # example
-#   MODEL=sonnet ./generate-plans.sh my-prompt.md      # override model
-#   ./generate-plans.sh --debug my-prompt.md           # single variant (baseline)
-#   ./generate-plans.sh --debug=k8s-ops my-prompt.md   # single variant (chosen)
-#   DEBUG=1 ./generate-plans.sh my-prompt.md            # same as --debug
+#   Single prompt + variant config (variants from config.yaml):
+#     ./generate-plans.sh <prompt-file>                  # all 4 variants
+#     ./generate-plans.sh initial-project-promt.md       # example
+#     MODEL=sonnet ./generate-plans.sh my-prompt.md      # override model
+#     ./generate-plans.sh --debug my-prompt.md           # single variant (baseline)
+#     ./generate-plans.sh --debug=k8s-ops my-prompt.md   # single variant (chosen)
+#     DEBUG=1 ./generate-plans.sh my-prompt.md            # same as --debug
+#
+#   Multiple prompt files (each file = one variant, no config.yaml needed):
+#     ./generate-plans.sh prompt-baseline.md prompt-simplicity.md prompt-depth.md
+#     MODEL=sonnet ./generate-plans.sh prompts/*.md
+#     Variant name = filename without .md extension.
+#
+#   Multiple prompt files with shared context appended to each:
+#     ./generate-plans.sh --context shared-context.md prompt-*.md
+#     The context file is appended to every prompt before the output instruction.
 #
 # After completion, merge with:
 #   ./merge-plans.sh generated-plans/<prompt-name>/latest
@@ -45,37 +55,73 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ─── Parse arguments ──────────────────────────────────────────────────────
-# Supports: --debug, --debug=<variant>, positional <prompt-file>
+# Supports: --debug, --debug=<variant>, --context=<file>, positional <prompt-file(s)>
 DEBUG_MODE="${DEBUG:-}"
 DEBUG_VARIANT=""
+CONTEXT_FILE=""
 
 args=()
 for arg in "$@"; do
     case "$arg" in
-        --debug)    DEBUG_MODE=1 ;;
-        --debug=*)  DEBUG_MODE=1; DEBUG_VARIANT="${arg#--debug=}" ;;
-        *)          args+=("$arg") ;;
+        --debug)        DEBUG_MODE=1 ;;
+        --debug=*)      DEBUG_MODE=1; DEBUG_VARIANT="${arg#--debug=}" ;;
+        --context=*)    CONTEXT_FILE="${arg#--context=}" ;;
+        --context)      echo "Error: --context requires a value (--context=file.md)"; exit 1 ;;
+        *)              args+=("$arg") ;;
     esac
 done
 
-PROMPT_FILE="${args[0]:?Usage: $0 [--debug[=variant]] <prompt-file>}"
-
-# Resolve prompt file to absolute path (may be relative to CWD)
-if [[ "$PROMPT_FILE" != /* ]]; then
-    PROMPT_FILE="$(pwd)/$PROMPT_FILE"
+# Resolve and validate context file
+SHARED_CONTEXT=""
+if [ -n "$CONTEXT_FILE" ]; then
+    if [[ "$CONTEXT_FILE" != /* ]]; then
+        CONTEXT_FILE="$(pwd)/$CONTEXT_FILE"
+    fi
+    if [ ! -f "$CONTEXT_FILE" ]; then
+        echo "Error: context file not found: $CONTEXT_FILE"
+        exit 1
+    fi
+    SHARED_CONTEXT=$'\n\n'"$(cat "$CONTEXT_FILE")"
 fi
 
-if [ ! -f "$PROMPT_FILE" ]; then
-    echo "Error: $PROMPT_FILE not found"
+# ─── Detect mode: single prompt + config variants, or multiple prompt files ──
+if [ ${#args[@]} -eq 0 ]; then
+    echo "Usage: $0 [--debug[=variant]] <prompt-file>"
+    echo "       $0 <prompt-1.md> <prompt-2.md> ...  (multi-file mode)"
     exit 1
 fi
 
-BASE_PROMPT=$(cat "$PROMPT_FILE")
+MULTI_FILE_MODE=false
+if [ ${#args[@]} -gt 1 ]; then
+    MULTI_FILE_MODE=true
+fi
+
+# Resolve all prompt files to absolute paths and verify they exist
+PROMPT_FILES=()
+for f in "${args[@]}"; do
+    if [[ "$f" != /* ]]; then
+        f="$(pwd)/$f"
+    fi
+    if [ ! -f "$f" ]; then
+        echo "Error: $f not found"
+        exit 1
+    fi
+    PROMPT_FILES+=("$f")
+done
+
+if $MULTI_FILE_MODE; then
+    # Multi-file mode: use parent directory name or "multi" as the run name
+    PROMPT_NAME="multi-$(date +%H%M%S)"
+    BASE_PROMPT=""  # not used in multi-file mode
+else
+    PROMPT_FILE="${PROMPT_FILES[0]}"
+    BASE_PROMPT=$(cat "$PROMPT_FILE")
+    PROMPT_NAME=$(basename "$PROMPT_FILE" .md)
+fi
 
 # Directory structure: generated-plans/<prompt-name>/<timestamp>/
 # Use absolute paths — they must work after we cd to WORK_DIR.
 PLANS_DIR="$SCRIPT_DIR/generated-plans"
-PROMPT_NAME=$(basename "$PROMPT_FILE" .md)
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 RUN_DIR="$PLANS_DIR/$PROMPT_NAME/$TIMESTAMP"
 mkdir -p "$RUN_DIR"
@@ -114,8 +160,22 @@ WORK_DIR="${WORK_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
 
 # ─── Load project config (variants + add-dirs) ───────────────────────────
+ADD_DIRS=()
+declare -A VARIANTS
+
+if $MULTI_FILE_MODE; then
+    # Multi-file mode: each file IS a complete variant prompt.
+    # Variant name = filename without .md extension.
+    # Config is still loaded for add_dirs only (variants are ignored).
+    for f in "${PROMPT_FILES[@]}"; do
+        variant_name=$(basename "$f" .md)
+        VARIANTS[$variant_name]="__FILE__:$f"
+    done
+    echo "  Multi-file mode: ${#VARIANTS[@]} prompt files"
+fi
+
+# Load config for add_dirs (and variants in single-file mode).
 # Priority: CONFIG env var > config.local.yaml > config.yaml
-# Usage: CONFIG=config.hyperflow.yaml ./generate-plans.sh my-prompt.md
 CONFIG_FILE="${CONFIG:-}"
 if [ -n "$CONFIG_FILE" ] && [[ "$CONFIG_FILE" != /* ]]; then
     CONFIG_FILE="$SCRIPT_DIR/$CONFIG_FILE"
@@ -126,39 +186,41 @@ elif [ -f "$SCRIPT_DIR/config.yaml" ]; then
     CONFIG_FILE="$SCRIPT_DIR/config.yaml"
 fi
 
-ADD_DIRS=()
-declare -A VARIANTS
-
 if [ -n "$CONFIG_FILE" ]; then
-    # Parse YAML into bash-friendly format using Python + PyYAML.
-    eval "$(python3 -c "
-import yaml, sys, shlex
-
+    if $MULTI_FILE_MODE; then
+        # Multi-file: only load add_dirs from config, skip variants.
+        eval "$(python3 -c "
+import yaml, shlex
 with open('$CONFIG_FILE') as f:
     cfg = yaml.safe_load(f)
-
-# Emit ADD_DIRS array
 dirs = cfg.get('add_dirs') or []
-parts = []
-for d in dirs:
-    parts.append(shlex.quote(str(d)))
+parts = [shlex.quote(str(d)) for d in dirs]
 print('ADD_DIRS=(' + ' '.join(parts) + ')')
-
-# Emit VARIANTS associative array entries
+")"
+    else
+        # Single-file: load both add_dirs and variants from config.
+        eval "$(python3 -c "
+import yaml, shlex
+with open('$CONFIG_FILE') as f:
+    cfg = yaml.safe_load(f)
+dirs = cfg.get('add_dirs') or []
+parts = [shlex.quote(str(d)) for d in dirs]
+print('ADD_DIRS=(' + ' '.join(parts) + ')')
 variants = cfg.get('variants') or {'baseline': ''}
 for name, guidance in variants.items():
     val = str(guidance).strip() if guidance else ''
     print(f'VARIANTS[{name}]={shlex.quote(val)}')
 ")"
-else
+    fi
+elif ! $MULTI_FILE_MODE; then
     echo "Warning: No config.yaml found. Using baseline-only variant."
     VARIANTS[baseline]=""
 fi
 
 # NOTE: output_instruction is set per-variant inside the loop (needs md_file path)
 
-# ─── Debug mode: filter to single variant ─────────────────────────────────
-if [ -n "$DEBUG_MODE" ]; then
+# ─── Debug mode: filter to single variant (single-file mode only) ────────
+if [ -n "$DEBUG_MODE" ] && ! $MULTI_FILE_MODE; then
     if [ -z "${VARIANTS[$DEBUG_VARIANT]+x}" ]; then
         echo "Error: unknown variant '$DEBUG_VARIANT'"
         echo "Available: ${!VARIANTS[*]}"
@@ -223,14 +285,23 @@ Rules:
    turns as needed for thorough research
 2. Then use the Write tool ONCE to create the file at the path above with
    the ENTIRE plan content
-3. Start the file content with '# HyperFlow Conductor Implementation Plan'
+3. Start the file content with '# Plan'
 4. Include ALL sections in that single Write call — do not split the plan
    across multiple Write calls
 5. Do NOT write to .claude/plans/ or any other path — ONLY the path above
 6. After writing the file, output a brief confirmation (e.g., 'Plan written
    to ${md_file}')"
 
-    full_prompt="${BASE_PROMPT}${VARIANTS[$variant]}${output_instruction}"
+    # Build the full prompt:
+    #   Multi-file:  file content + shared context + output instruction
+    #   Single-file: base prompt + variant guidance + shared context + output instruction
+    variant_value="${VARIANTS[$variant]}"
+    if [[ "$variant_value" == __FILE__:* ]]; then
+        prompt_file="${variant_value#__FILE__:}"
+        full_prompt="$(cat "$prompt_file")${SHARED_CONTEXT}${output_instruction}"
+    else
+        full_prompt="${BASE_PROMPT}${variant_value}${SHARED_CONTEXT}${output_instruction}"
+    fi
 
     # Build --add-dir flags for directories that exist
     add_dir_flags=()

@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Merge configuration — customize how plans are compared and merged.
+#
+# For personal overrides, create merge-config.local.yaml (gitignored).
+# Or specify explicitly: MERGE_CONFIG=my-merge.yaml ./merge-plans.sh ...
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Short description of what these plans are about.
+# Used in the intro prompt to give Claude context.
+project_description: "the project"
+
+# Role the merge LLM assumes (simple mode only).
+role: "an expert analyst"
+
+# Dimensions to compare across plans.
+# Each dimension becomes a row in the comparison table and a debate topic.
+dimensions:
+  - Approach and strategy
+  - Scope and priorities
+  - Technical depth and specificity
+  - Architecture and structure
+  - Risk assessment and trade-offs
+  - Actionability and next steps
+
+# Instructions for each advocate agent (agent-teams mode).
+# Describes how advocates should argue for their plan.
+advocate_instructions: |
+  Argue for its approach in each dimension. Challenge the other
+  advocates' plans where yours is stronger. Concede where yours is weaker.
+  Be specific — cite exact sections and trade-offs.
+
+# What the merged output should achieve.
+# This shapes the final synthesis goal.
+output_goal: |
+  The merged plan must be standalone — someone should be able to act on it
+  without referencing the source plans.
+
+# Title for the merged plan file.
+output_title: "Merged Plan"

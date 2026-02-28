@@ -6,6 +6,7 @@ generated-plans/
 
 # Local config overrides (personal add-dirs, domain-specific variants)
 config.local.yaml
+merge-config.local.yaml
 
 # Asciinema recordings (upload to asciinema.org, don't commit)
 demo/*.cast
@@ -14,4 +15,5 @@ demo/*.cast
 # Claude Code local settings
 .claude/
 
-configs/*
+# Temporary files
+/tmp/
