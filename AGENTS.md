@@ -11,9 +11,9 @@ The scripts are domain-agnostic. Domain-specific configuration lives in `config.
 ## Pipeline
 
 1. **Generate** (`generate-plans.sh`): Launches parallel `claude -p` sessions, each with a different prompt. Two modes:
-   - **Single-file**: One prompt + variant guidance from `config.yaml` (baseline, simplicity, framework-depth, k8s-ops).
+   - **Single-file**: One prompt + variant guidance from `config.yaml` (default: 4 variants).
    - **Multi-file**: Each prompt file is a standalone variant. Supports `--context=shared.md` to append common context to all prompts.
-   Each session researches the codebase and writes a plan to a file via the Write tool.
+   Each session writes a plan to a file via the Write tool.
 
 2. **Merge** (`merge-plans.sh`): Takes the generated plans and produces a merged plan. Two modes:
    - `agent-teams` (default): Interactive Claude session with Agent Teams — spawns advocate agents that debate each plan, then the lead synthesizes.
@@ -29,20 +29,21 @@ Variant prompts and additional directories are defined in YAML config files.
 
 ```yaml
 # config.yaml
-add_dirs:
-  - ../shared-libs
+work_dir: ""          # empty = temp dir (no file access); set for codebase plans
+add_dirs: []          # extra dirs beyond work_dir
 
+# 4 variants recommended (see research/number-of-llms-sessions.md)
 variants:
   baseline: ""
   simplicity: |
     ## Additional guidance
     Prioritize simplicity...
-  framework-depth: |
+  depth: |
     ## Additional guidance
-    Focus on framework patterns...
-  k8s-ops: |
+    Go deep on specifics...
+  breadth: |
     ## Additional guidance
-    Focus on deployment depth...
+    Take a wide view...
 ```
 
 - `config.yaml` — generic defaults (committed to repo)
@@ -59,6 +60,7 @@ Merge prompts (dimensions, role, output goal) are configured via `merge-config.y
 
 ```yaml
 # merge-config.yaml
+work_dir: ""          # empty = temp dir; set for codebase-aware merge
 project_description: "the project"
 role: "an expert analyst"
 dimensions:
@@ -77,7 +79,7 @@ Usage: `MERGE_CONFIG=projects/hackathon/merge-config.yaml ./merge-plans.sh gener
 ## Commands
 
 ```bash
-# Generate plans (all 4 variants, Opus, ~15-25 min)
+# Generate plans (all variants from config, Opus, ~15-25 min)
 ./generate-plans.sh <prompt-file.md>
 
 # Generate with overrides
@@ -93,7 +95,7 @@ CONFIG=projects/hyperflow/config.yaml ./generate-plans.sh my-prompt.md
 
 # Debug mode: single variant, sonnet, fast
 ./generate-plans.sh --debug my-prompt.md           # baseline only
-./generate-plans.sh --debug=k8s-ops my-prompt.md   # specific variant
+./generate-plans.sh --debug=depth my-prompt.md     # specific variant
 
 # Merge plans (interactive agent-teams debate)
 ./merge-plans.sh generated-plans/<prompt-name>/latest
@@ -116,9 +118,9 @@ MERGE_CONFIG=projects/agentregistry/merge-config.yaml ./merge-plans.sh generated
 # Single-file mode:
 generated-plans/<prompt-name>/<timestamp>/
   plan-baseline.md          # unguided variant
-  plan-simplicity.md        # minimal MVP focus
-  plan-framework-depth.md   # detailed code patterns
-  plan-k8s-ops.md           # deployment focus
+  plan-simplicity.md        # minimal scope
+  plan-depth.md             # detailed specifics
+  plan-breadth.md           # wide view
 
 # Multi-file mode:
 generated-plans/multi-<HHMMSS>/<timestamp>/
@@ -135,9 +137,9 @@ generated-plans/<name>/latest -> <timestamp>   # symlink
 
 ## Key Design Decisions
 
-- **4 variants, not more**: Research shows diminishing returns from same-model ensembles (arXiv:2506.07962). Diversity comes from prompt variation, not repetition. See `research/number-of-llms-sessions.md`.
+- **Default: 4 variants (configurable)**: Research shows diminishing returns from same-model ensembles — N=3-4 captures ~80% of total gain (arXiv:2506.07962). The number of variants is defined in `config.yaml`; add more or fewer as needed. Diversity comes from prompt variation, not repetition. See `research/number-of-llms-sessions.md`.
 - **Write tool for output capture**: `--output-format text` only captures the LAST assistant message. Multi-turn research sessions lose intermediate content. The prompt instructs Claude to write the complete plan via the Write tool.
-- **WORK_DIR override**: Sessions run from `WORK_DIR` (default: `../../`, the common parent) so all sibling repos are within the sandbox tree. `--add-dir` flags don't propagate to subagents, so CWD must encompass all needed files.
+- **Configurable work_dir**: Sessions run from `work_dir` (set in config). If empty or missing, sessions run in a temporary directory with no file access — useful for non-codebase plans. `--add-dir` flags don't propagate to subagents, so CWD must encompass all needed files.
 - **`CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000`**: Overrides any shell default, which may truncate plans.
 - **`--dangerously-skip-permissions`**: Required for headless `-p` mode where no interactive user can approve tool use.
 - **Monitor variant detection**: Uses output file path matching (`plan-baseline.md`, etc.) which works regardless of prompt content. Falls back to prompt text matching for legacy compatibility.
@@ -149,7 +151,7 @@ generated-plans/<name>/latest -> <timestamp>   # symlink
 | `MODEL` | `opus` | `sonnet` | Claude model |
 | `MAX_TURNS` | `80` | `20` | Max API round-trips per session |
 | `TIMEOUT_SECS` | `3600` | `600` | Hard kill timeout |
-| `WORK_DIR` | `../../` | `../../` | CWD for Claude sessions |
+| `WORK_DIR` | from config | from config | CWD for Claude sessions (overrides config `work_dir`) |
 | `CONFIG` | — | — | Path to YAML config file |
 | `MERGE_MODE` | `agent-teams` | — | `agent-teams` or `simple` |
 | `MERGE_CONFIG` | — | — | Path to merge YAML config file |

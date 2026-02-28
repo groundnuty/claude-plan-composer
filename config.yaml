@@ -1,11 +1,18 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Project-specific configuration for generate-plans.sh and merge-plans.sh.
+# Project-specific configuration for generate-plans.sh.
 #
 # Edit this file to adapt the pipeline to your project.
 # For personal overrides, create config.local.yaml (gitignored).
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Additional directories Claude might need outside WORK_DIR.
+# Working directory for Claude sessions.
+# Claude runs from this directory and can access all files within it.
+# Set to a parent directory containing all repos Claude should access.
+# If empty or missing, sessions run in a temporary directory (no file access).
+# Override per-run: WORK_DIR=/path ./generate-plans.sh ...
+work_dir: ""
+
+# Additional directories Claude might need outside work_dir.
 # Passed as --add-dir flags. Missing directories are silently skipped.
 # Paths can be absolute or relative to the script directory ($SCRIPT_DIR).
 add_dirs: []
@@ -14,6 +21,10 @@ add_dirs: []
 
 # Prompt variants — each forces a different perspective on the same base prompt.
 # "baseline" should always have an empty value (no extra guidance).
+#
+# Default: 4 variants recommended. Research shows diminishing returns beyond 4
+# for same-model ensembles — diversity comes from prompt variation, not repetition.
+# See research/number-of-llms-sessions.md for details.
 #
 # Customize these to match your domain. Good variant dimensions:
 #   - simplicity vs. completeness
@@ -24,19 +35,18 @@ variants:
 
   simplicity: |
     ## Additional guidance
-    Prioritize simplicity — find the smallest possible MVP that still demonstrates
-    the full pipeline. Minimize dependencies and moving parts. Question whether each
-    component is truly needed. Fewer files is better.
+    Prioritize simplicity — find the smallest possible scope that still
+    addresses the core problem. Minimize moving parts. Question whether each
+    element is truly needed.
 
-  framework-depth: |
+  depth: |
     ## Additional guidance
-    Focus on framework and library patterns. Show detailed code examples for each
-    pipeline phase. Include exact imports, error handling patterns, and how key
-    libraries work together. Show code, not just descriptions.
+    Go deep on specifics. Show detailed examples, exact steps, concrete
+    patterns, and how components work together. Prefer specificity over
+    generality.
 
-  k8s-ops: |
+  breadth: |
     ## Additional guidance
-    Focus on deployment depth and operability. Include exact deployment commands
-    with flags, resource configuration, environment setup, and operational
-    runbooks. Document infrastructure decisions with comparative data where
-    relevant.
+    Take a wide view. Consider alternative approaches, trade-offs, risks,
+    and second-order effects. Map the full landscape before recommending
+    a path.

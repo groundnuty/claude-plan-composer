@@ -60,7 +60,7 @@ echo ""
 MODEL="${MODEL:-opus}"
 MERGE_MODE="${MERGE_MODE:-agent-teams}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-3600}"
-WORK_DIR="${WORK_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+WORK_DIR_ENV="${WORK_DIR:-}"
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
 
 # Output file (absolute path — works from any CWD)
@@ -83,6 +83,7 @@ eval "$(python3 -c "
 import yaml, shlex, sys
 
 defaults = {
+    'work_dir': '',
     'project_description': 'the project',
     'role': 'an expert analyst',
     'dimensions': [
@@ -107,6 +108,8 @@ if cfg_file:
 else:
     cfg = defaults
 
+wd = str(cfg.get('work_dir') or '').strip()
+print(f'CFG_WORK_DIR={shlex.quote(wd)}')
 print(f'MCFG_PROJECT={shlex.quote(str(cfg[\"project_description\"]))}')
 print(f'MCFG_ROLE={shlex.quote(str(cfg[\"role\"]))}')
 print(f'MCFG_ADVOCATE={shlex.quote(str(cfg[\"advocate_instructions\"]).strip())}')
@@ -118,6 +121,21 @@ dims = cfg.get('dimensions', defaults['dimensions'])
 dim_list = chr(10).join(f'   - {d}' for d in dims)
 print(f'MCFG_DIMENSIONS={shlex.quote(dim_list)}')
 ")"
+
+# ─── Resolve WORK_DIR ────────────────────────────────────────────────────
+# Priority: WORK_DIR env var > config work_dir > temp directory.
+if [ -n "$WORK_DIR_ENV" ]; then
+    WORK_DIR="$WORK_DIR_ENV"
+elif [ -n "${CFG_WORK_DIR:-}" ]; then
+    if [[ "$CFG_WORK_DIR" != /* ]]; then
+        WORK_DIR="$(cd "$SCRIPT_DIR" && cd "$CFG_WORK_DIR" && pwd)"
+    else
+        WORK_DIR="$CFG_WORK_DIR"
+    fi
+else
+    WORK_DIR=$(mktemp -d)
+    WORK_DIR_IS_TEMP=true
+fi
 
 echo "  Merge config: ${MERGE_CONFIG_FILE:-defaults}"
 
@@ -259,7 +277,7 @@ Rules:
 
     logfile="$RUN_DIR/merge.log"
 
-    # Run from WORK_DIR so subagents can access source repos for verification.
+    # Run from WORK_DIR so subagents can access files if needed.
     # Claude writes merged plan to $merge_md via Write tool.
     # stdout + stderr go to logfile for debugging.
     #
@@ -306,4 +324,9 @@ Rules:
 else
     echo "ERROR: Unknown MERGE_MODE=$MERGE_MODE (expected: agent-teams, simple)"
     exit 1
+fi
+
+# Clean up temp work directory if we created one
+if [ "${WORK_DIR_IS_TEMP:-}" = "true" ] && [ -d "$WORK_DIR" ]; then
+    rm -rf "$WORK_DIR"
 fi

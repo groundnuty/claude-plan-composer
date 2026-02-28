@@ -6,14 +6,15 @@ set -euo pipefail
 #
 # Output: generated-plans/<prompt-name>/<timestamp>/plan-{variant}.md
 #
-# WHY 4 SESSIONS?
-#   Research shows diminishing returns from same-model LLM ensembles:
+# WHY N SESSIONS? (default: 4)
+#   The number of variants is configurable in config.yaml. The default of 4
+#   is based on research showing diminishing returns from same-model ensembles:
 #   - Correlated errors: same model = 60% error agreement (arXiv:2506.07962)
 #   - Self-MoA (Li et al. 2025): multiple runs of best model > mixing models
 #   - Best-of-N: logarithmic returns, N=3-4 captures ~80% of total gain
-#   - Merging cost: comparing 4 plans = 6 pairs (still manageable)
+#   - Merging cost: N plans = N*(N-1)/2 pairwise comparisons
 #   Diversity comes from PROMPT VARIATION, not from more runs of same prompt.
-#   4 variants cover: baseline, simplicity, framework patterns, K8s operations.
+#   See research/number-of-llms-sessions.md for full analysis.
 #
 # OUTPUT CAPTURE (v2 fix):
 #   v1 used `--output-format text > file` which only captures the LAST assistant
@@ -27,12 +28,12 @@ set -euo pipefail
 #   v1 ran `claude -p` from plan-generator/. Subagents couldn't access files
 #   in sibling repos despite --add-dir flags (--add-dir doesn't propagate
 #   to subagents).
-#   v2 runs `claude -p` from the common parent hyperflow/ directory so all
-#   repos are within the CWD sandbox tree.
+#   v2 runs `claude -p` from a configurable work_dir so all needed repos
+#   are within the CWD sandbox tree. If work_dir is empty, uses a temp dir.
 #
 # Usage:
 #   Single prompt + variant config (variants from config.yaml):
-#     ./generate-plans.sh <prompt-file>                  # all 4 variants
+#     ./generate-plans.sh <prompt-file>                  # all variants from config
 #     ./generate-plans.sh initial-project-promt.md       # example
 #     MODEL=sonnet ./generate-plans.sh my-prompt.md      # override model
 #     ./generate-plans.sh --debug my-prompt.md           # single variant (baseline)
@@ -129,7 +130,7 @@ mkdir -p "$RUN_DIR"
 # ─── Configuration ─────────────────────────────────────────────────────────
 
 # ─── Debug mode defaults ──────────────────────────────────────────────────
-# Runs a single variant to test the pipeline without burning tokens on all 4.
+# Runs a single variant to test the pipeline without burning tokens on all variants.
 #   --debug          → baseline variant, sonnet model, 20 max turns, 10 min timeout
 #   --debug=k8s-ops  → k8s-ops variant, sonnet model, 20 max turns, 10 min timeout
 #   DEBUG=1          → same as --debug
@@ -149,10 +150,9 @@ else
     STAGGER_SECS=10
 fi
 
-# SANDBOX FIX: Run claude -p from this common parent directory.
-# All repos (1000genome/, hyperflow-k8s-deployment/, hyperflow/) are under it.
-# This ensures both the parent session AND subagents can read all files.
-WORK_DIR="${WORK_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+# WORK_DIR is resolved after config is loaded (needs work_dir from config).
+# Priority: WORK_DIR env var > config work_dir > temp directory.
+WORK_DIR_ENV="${WORK_DIR:-}"
 
 # CRITICAL: Override the global CLAUDE_CODE_MAX_OUTPUT_TOKENS unconditionally.
 # Your ~/.zshrc sets it to 6000 — far too low for implementation plans (8K-20K tokens).
@@ -188,21 +188,25 @@ fi
 
 if [ -n "$CONFIG_FILE" ]; then
     if $MULTI_FILE_MODE; then
-        # Multi-file: only load add_dirs from config, skip variants.
+        # Multi-file: only load work_dir + add_dirs from config, skip variants.
         eval "$(python3 -c "
 import yaml, shlex
 with open('$CONFIG_FILE') as f:
     cfg = yaml.safe_load(f)
+wd = str(cfg.get('work_dir') or '').strip()
+print(f'CFG_WORK_DIR={shlex.quote(wd)}')
 dirs = cfg.get('add_dirs') or []
 parts = [shlex.quote(str(d)) for d in dirs]
 print('ADD_DIRS=(' + ' '.join(parts) + ')')
 ")"
     else
-        # Single-file: load both add_dirs and variants from config.
+        # Single-file: load work_dir, add_dirs, and variants from config.
         eval "$(python3 -c "
 import yaml, shlex
 with open('$CONFIG_FILE') as f:
     cfg = yaml.safe_load(f)
+wd = str(cfg.get('work_dir') or '').strip()
+print(f'CFG_WORK_DIR={shlex.quote(wd)}')
 dirs = cfg.get('add_dirs') or []
 parts = [shlex.quote(str(d)) for d in dirs]
 print('ADD_DIRS=(' + ' '.join(parts) + ')')
@@ -215,6 +219,23 @@ for name, guidance in variants.items():
 elif ! $MULTI_FILE_MODE; then
     echo "Warning: No config.yaml found. Using baseline-only variant."
     VARIANTS[baseline]=""
+fi
+
+# ─── Resolve WORK_DIR ────────────────────────────────────────────────────
+# Priority: WORK_DIR env var > config work_dir > temp directory.
+# Temp dir means Claude has no access to project files (useful for non-code plans).
+if [ -n "$WORK_DIR_ENV" ]; then
+    WORK_DIR="$WORK_DIR_ENV"
+elif [ -n "${CFG_WORK_DIR:-}" ]; then
+    # Resolve relative paths against script directory
+    if [[ "$CFG_WORK_DIR" != /* ]]; then
+        WORK_DIR="$(cd "$SCRIPT_DIR" && cd "$CFG_WORK_DIR" && pwd)"
+    else
+        WORK_DIR="$CFG_WORK_DIR"
+    fi
+else
+    WORK_DIR=$(mktemp -d)
+    WORK_DIR_IS_TEMP=true
 fi
 
 # NOTE: output_instruction is set per-variant inside the loop (needs md_file path)
@@ -311,7 +332,8 @@ Rules:
         fi
     done
 
-    # Run from WORK_DIR so all repos are within the sandbox tree.
+    # Run from WORK_DIR so all repos within it are accessible to Claude.
+    # If WORK_DIR is a temp dir, Claude has no project files to read.
     # Claude writes the plan to $md_file via the Write tool.
     # stdout + stderr go to logfile for debugging.
     #
@@ -422,3 +444,8 @@ echo "  ./merge-plans.sh $RUN_DIR"
 echo ""
 echo "  or using the symlink:"
 echo "  ./merge-plans.sh $PLANS_DIR/$PROMPT_NAME/latest"
+
+# Clean up temp work directory if we created one
+if [ "${WORK_DIR_IS_TEMP:-}" = "true" ] && [ -d "$WORK_DIR" ]; then
+    rm -rf "$WORK_DIR"
+fi

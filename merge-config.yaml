@@ -5,6 +5,11 @@
 # Or specify explicitly: MERGE_CONFIG=my-merge.yaml ./merge-plans.sh ...
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Working directory for Claude merge sessions.
+# If empty or missing, sessions run in a temporary directory (no file access).
+# Override per-run: WORK_DIR=/path ./merge-plans.sh ...
+work_dir: ""
+
 # Short description of what these plans are about.
 # Used in the intro prompt to give Claude context.
 project_description: "the project"
