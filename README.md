@@ -126,7 +126,7 @@ The key requirement is that your prompt file gives Claude enough context to prod
 
 ## Limitations
 
-- **This is a specific example, not a framework.** It's a working technique with bash scripts, not a polished library. Fork it, adapt it, throw away what you don't need.
+- **Bash scripts, not a library.** This is a configurable toolkit, not a polished SDK. It's intentionally simple — shell scripts you can read, modify, and extend.
 - **Cost: ~$20-60 per run.** Default 4 Opus sessions plus a merge session. Use `--debug` mode (single Sonnet session) to iterate on prompts cheaply before a full run.
 - **Same-model correlation is inherent.** Prompt variation reduces but doesn't eliminate correlated blind spots. If Claude doesn't know about your internal API, four variants of Claude still won't know about it.
 - **The merge step has its own biases.** The LLM doing the merge may favor familiar patterns when adjudicating between plans. The Agent Teams debate mode helps but doesn't fully solve this.
