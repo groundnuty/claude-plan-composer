@@ -58,6 +58,10 @@ print(f'MCFG_ROLE={shlex.quote(str(cfg[\"role\"]))}')
 print(f'MCFG_TITLE={shlex.quote(str(cfg[\"output_title\"]))}')
 
 cm = str(cfg.get('comparison_method', 'holistic')).strip()
+if cm not in ('holistic', 'pairwise'):
+    print(f'echo \"Warning: unknown comparison_method {shlex.quote(cm)}, falling back to holistic\"',
+          file=sys.stderr)
+    cm = 'holistic'
 print(f'MCFG_COMPARISON={shlex.quote(cm)}')
 
 raw_dims = cfg.get('dimensions', defaults['dimensions'])
@@ -66,12 +70,32 @@ dim_weights = {}
 for d in raw_dims:
     if isinstance(d, dict):
         name = str(d.get('name', ''))
-        weight = d.get('weight')
+        if not name:
+            print('Warning: dimension dict missing \"name\" key, skipping',
+                  file=sys.stderr)
+            continue
         dim_names.append(name)
+        weight = d.get('weight')
         if weight is not None:
-            dim_weights[name] = float(weight)
+            try:
+                w = float(weight)
+            except (ValueError, TypeError):
+                print(f'Warning: non-numeric weight for \"{name}\": {weight!r}, ignoring',
+                      file=sys.stderr)
+                continue
+            if w < 0:
+                print(f'Warning: negative weight for \"{name}\": {w}, ignoring',
+                      file=sys.stderr)
+                continue
+            dim_weights[name] = w
     else:
         dim_names.append(str(d))
+
+if dim_weights:
+    total_w = sum(dim_weights.values())
+    if total_w > 1.0:
+        print(f'Warning: explicit weights sum to {total_w:.2f} (> 1.0)',
+              file=sys.stderr)
 
 dim_list = chr(10).join(f'   - {n}' for n in dim_names)
 print(f'MCFG_DIMENSIONS={shlex.quote(dim_list)}')
@@ -218,4 +242,63 @@ EOF
   run _parse_merge_config "${TEST_TEMP_DIR}/merge-config.yaml"
   assert_success
   assert_output --partial '["First", "Second", "Third"]'
+}
+
+# ─── Validation ───────────────────────────────────────────────────────
+
+@test "falls back to holistic for unknown comparison_method" {
+  cat >"${TEST_TEMP_DIR}/merge-config.yaml" <<'EOF'
+project_description: "test project"
+comparison_method: typo-value
+EOF
+
+  run _parse_merge_config "${TEST_TEMP_DIR}/merge-config.yaml"
+  assert_success
+  assert_output --partial "MCFG_COMPARISON=holistic"
+}
+
+@test "skips dimension dict missing name key" {
+  cat >"${TEST_TEMP_DIR}/merge-config.yaml" <<'EOF'
+project_description: "test project"
+dimensions:
+  - weight: 0.5
+  - "Valid dimension"
+EOF
+
+  run _parse_merge_config "${TEST_TEMP_DIR}/merge-config.yaml"
+  assert_success
+  assert_output --partial "Valid dimension"
+  # Only one dimension should appear in JSON array
+  assert_output --partial '["Valid dimension"]'
+}
+
+@test "ignores non-numeric weight" {
+  cat >"${TEST_TEMP_DIR}/merge-config.yaml" <<'EOF'
+project_description: "test project"
+dimensions:
+  - name: "Dim A"
+    weight: "high"
+  - "Dim B"
+EOF
+
+  run _parse_merge_config "${TEST_TEMP_DIR}/merge-config.yaml"
+  assert_success
+  # Dim A should still appear but with no weight
+  assert_output --partial "Dim A"
+  assert_output --partial "MCFG_DIM_WEIGHTS_JSON='{}'"
+}
+
+@test "ignores negative weight" {
+  cat >"${TEST_TEMP_DIR}/merge-config.yaml" <<'EOF'
+project_description: "test project"
+dimensions:
+  - name: "Dim A"
+    weight: -0.5
+  - "Dim B"
+EOF
+
+  run _parse_merge_config "${TEST_TEMP_DIR}/merge-config.yaml"
+  assert_success
+  assert_output --partial "Dim A"
+  assert_output --partial "MCFG_DIM_WEIGHTS_JSON='{}'"
 }

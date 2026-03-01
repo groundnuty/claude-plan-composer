@@ -82,7 +82,8 @@ fi
 # Parse merge config with defaults for every field.
 # Variables set by eval: MCFG_PROJECT, MCFG_ROLE, MCFG_ADVOCATE,
 # MCFG_GOAL, MCFG_TITLE, MCFG_DIMENSIONS, MCFG_CONSTITUTION,
-# MCFG_COMPARISON, MCFG_DIM_NAMES_JSON, CFG_WORK_DIR, CFG_MCP_CONFIG
+# MCFG_COMPARISON, MCFG_DIM_NAMES_JSON, MCFG_DIM_WEIGHTS_JSON,
+# CFG_WORK_DIR, CFG_MCP_CONFIG
 # shellcheck disable=SC2312 # eval of python output is intentional
 eval "$(python3 -c "
 import yaml, shlex, json, sys
@@ -131,8 +132,12 @@ print(f'MCFG_ADVOCATE={shlex.quote(str(cfg[\"advocate_instructions\"]).strip())}
 print(f'MCFG_GOAL={shlex.quote(str(cfg[\"output_goal\"]).strip())}')
 print(f'MCFG_TITLE={shlex.quote(str(cfg[\"output_title\"]))}')
 
-# Comparison method
+# Comparison method — validate value
 cm = str(cfg.get('comparison_method', 'holistic')).strip()
+if cm not in ('holistic', 'pairwise'):
+    print(f'echo \"Warning: unknown comparison_method {shlex.quote(cm)}, falling back to holistic\"',
+          file=sys.stderr)
+    cm = 'holistic'
 print(f'MCFG_COMPARISON={shlex.quote(cm)}')
 
 # Dimensions — support both string and dict forms
@@ -144,12 +149,32 @@ dim_weights = {}
 for d in raw_dims:
     if isinstance(d, dict):
         name = str(d.get('name', ''))
-        weight = d.get('weight')
+        if not name:
+            print('Warning: dimension dict missing \"name\" key, skipping',
+                  file=sys.stderr)
+            continue
         dim_names.append(name)
+        weight = d.get('weight')
         if weight is not None:
-            dim_weights[name] = float(weight)
+            try:
+                w = float(weight)
+            except (ValueError, TypeError):
+                print(f'Warning: non-numeric weight for \"{name}\": {weight!r}, ignoring',
+                      file=sys.stderr)
+                continue
+            if w < 0:
+                print(f'Warning: negative weight for \"{name}\": {w}, ignoring',
+                      file=sys.stderr)
+                continue
+            dim_weights[name] = w
     else:
         dim_names.append(str(d))
+
+if dim_weights:
+    total_w = sum(dim_weights.values())
+    if total_w > 1.0:
+        print(f'Warning: explicit weights sum to {total_w:.2f} (> 1.0)',
+              file=sys.stderr)
 
 dim_list = chr(10).join(f'   - {n}' for n in dim_names)
 print(f'MCFG_DIMENSIONS={shlex.quote(dim_list)}')
