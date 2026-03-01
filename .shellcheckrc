@@ -1,0 +1,6 @@
+# ShellCheck configuration for claude-plan-composer
+shell=bash
+enable=all
+
+# Allow sourcing from the project
+source-path=SCRIPTDIR

@@ -46,3 +46,12 @@ output_goal: |
 
 # Title for the merged plan file.
 output_title: "Merged Plan"
+
+# Quality principles the merged plan must satisfy.
+# After synthesis, the merge verifies each principle and revises if needed.
+# Customize to match your project's quality standards.
+constitution:
+  - "Every trade-off must be explicitly acknowledged with pros and cons"
+  - "No section should be purely aspirational — each needs a concrete next step"
+  - "Risks identified in any source plan must appear in the merged plan"
+  - "The plan must be self-consistent — no section contradicts another"

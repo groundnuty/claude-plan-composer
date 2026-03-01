@@ -63,69 +63,75 @@ CONTEXT_FILE=""
 
 args=()
 for arg in "$@"; do
-    case "$arg" in
-        --debug)        DEBUG_MODE=1 ;;
-        --debug=*)      DEBUG_MODE=1; DEBUG_VARIANT="${arg#--debug=}" ;;
-        --context=*)    CONTEXT_FILE="${arg#--context=}" ;;
-        --context)      echo "Error: --context requires a value (--context=file.md)"; exit 1 ;;
-        *)              args+=("$arg") ;;
-    esac
+  case "${arg}" in
+    --debug) DEBUG_MODE=1 ;;
+    --debug=*)
+      DEBUG_MODE=1
+      DEBUG_VARIANT="${arg#--debug=}"
+      ;;
+    --context=*) CONTEXT_FILE="${arg#--context=}" ;;
+    --context)
+      echo "Error: --context requires a value (--context=file.md)"
+      exit 1
+      ;;
+    *) args+=("${arg}") ;;
+  esac
 done
 
 # Resolve and validate context file
 SHARED_CONTEXT=""
-if [ -n "$CONTEXT_FILE" ]; then
-    if [[ "$CONTEXT_FILE" != /* ]]; then
-        CONTEXT_FILE="$(pwd)/$CONTEXT_FILE"
-    fi
-    if [ ! -f "$CONTEXT_FILE" ]; then
-        echo "Error: context file not found: $CONTEXT_FILE"
-        exit 1
-    fi
-    SHARED_CONTEXT=$'\n\n'"$(cat "$CONTEXT_FILE")"
+if [[ -n "${CONTEXT_FILE}" ]]; then
+  if [[ "${CONTEXT_FILE}" != /* ]]; then
+    CONTEXT_FILE="$(pwd)/${CONTEXT_FILE}"
+  fi
+  if [[ ! -f "${CONTEXT_FILE}" ]]; then
+    echo "Error: context file not found: ${CONTEXT_FILE}"
+    exit 1
+  fi
+  SHARED_CONTEXT=$'\n\n'"$(cat "${CONTEXT_FILE}")"
 fi
 
 # ─── Detect mode: single prompt + config variants, or multiple prompt files ──
-if [ ${#args[@]} -eq 0 ]; then
-    echo "Usage: $0 [--debug[=variant]] <prompt-file>"
-    echo "       $0 <prompt-1.md> <prompt-2.md> ...  (multi-file mode)"
-    exit 1
+if [[ ${#args[@]} -eq 0 ]]; then
+  echo "Usage: $0 [--debug[=variant]] <prompt-file>"
+  echo "       $0 <prompt-1.md> <prompt-2.md> ...  (multi-file mode)"
+  exit 1
 fi
 
 MULTI_FILE_MODE=false
-if [ ${#args[@]} -gt 1 ]; then
-    MULTI_FILE_MODE=true
+if [[ ${#args[@]} -gt 1 ]]; then
+  MULTI_FILE_MODE=true
 fi
 
 # Resolve all prompt files to absolute paths and verify they exist
 PROMPT_FILES=()
 for f in "${args[@]}"; do
-    if [[ "$f" != /* ]]; then
-        f="$(pwd)/$f"
-    fi
-    if [ ! -f "$f" ]; then
-        echo "Error: $f not found"
-        exit 1
-    fi
-    PROMPT_FILES+=("$f")
+  if [[ "${f}" != /* ]]; then
+    f="$(pwd)/${f}"
+  fi
+  if [[ ! -f "${f}" ]]; then
+    echo "Error: ${f} not found"
+    exit 1
+  fi
+  PROMPT_FILES+=("${f}")
 done
 
-if $MULTI_FILE_MODE; then
-    # Multi-file mode: use parent directory name or "multi" as the run name
-    PROMPT_NAME="multi-$(date +%H%M%S)"
-    BASE_PROMPT=""  # not used in multi-file mode
+if ${MULTI_FILE_MODE}; then
+  # Multi-file mode: use parent directory name or "multi" as the run name
+  PROMPT_NAME="multi-$(date +%H%M%S)"
+  BASE_PROMPT="" # not used in multi-file mode
 else
-    PROMPT_FILE="${PROMPT_FILES[0]}"
-    BASE_PROMPT=$(cat "$PROMPT_FILE")
-    PROMPT_NAME=$(basename "$PROMPT_FILE" .md)
+  PROMPT_FILE="${PROMPT_FILES[0]}"
+  BASE_PROMPT=$(cat "${PROMPT_FILE}")
+  PROMPT_NAME=$(basename "${PROMPT_FILE}" .md)
 fi
 
 # Directory structure: generated-plans/<prompt-name>/<timestamp>/
 # Use absolute paths — they must work after we cd to WORK_DIR.
-PLANS_DIR="$SCRIPT_DIR/generated-plans"
+PLANS_DIR="${SCRIPT_DIR}/generated-plans"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-RUN_DIR="$PLANS_DIR/$PROMPT_NAME/$TIMESTAMP"
-mkdir -p "$RUN_DIR"
+RUN_DIR="${PLANS_DIR}/${PROMPT_NAME}/${TIMESTAMP}"
+mkdir -p "${RUN_DIR}"
 
 # ─── Configuration ─────────────────────────────────────────────────────────
 
@@ -135,19 +141,19 @@ mkdir -p "$RUN_DIR"
 #   --debug=k8s-ops  → k8s-ops variant, sonnet model, 20 max turns, 10 min timeout
 #   DEBUG=1          → same as --debug
 # Explicit env vars always win: MODEL=opus ./generate-plans.sh --debug ...
-if [ -n "$DEBUG_MODE" ]; then
-    MODEL="${MODEL:-sonnet}"
-    MAX_TURNS="${MAX_TURNS:-20}"
-    TIMEOUT_SECS="${TIMEOUT_SECS:-600}"
-    MIN_OUTPUT_BYTES=500
-    STAGGER_SECS=0
-    DEBUG_VARIANT="${DEBUG_VARIANT:-baseline}"
+if [[ -n "${DEBUG_MODE}" ]]; then
+  MODEL="${MODEL:-sonnet}"
+  MAX_TURNS="${MAX_TURNS:-20}"
+  TIMEOUT_SECS="${TIMEOUT_SECS:-600}"
+  MIN_OUTPUT_BYTES=500
+  STAGGER_SECS=0
+  DEBUG_VARIANT="${DEBUG_VARIANT:-baseline}"
 else
-    MODEL="${MODEL:-opus}"
-    MAX_TURNS="${MAX_TURNS:-80}"
-    TIMEOUT_SECS="${TIMEOUT_SECS:-3600}"
-    MIN_OUTPUT_BYTES=5000
-    STAGGER_SECS=10
+  MODEL="${MODEL:-opus}"
+  MAX_TURNS="${MAX_TURNS:-80}"
+  TIMEOUT_SECS="${TIMEOUT_SECS:-3600}"
+  MIN_OUTPUT_BYTES=5000
+  STAGGER_SECS=10
 fi
 
 # WORK_DIR is resolved after config is loaded (needs work_dir from config).
@@ -165,35 +171,36 @@ declare -A VARIANTS
 declare -A VARIANT_MODELS
 CFG_MCP_CONFIG=""
 
-if $MULTI_FILE_MODE; then
-    # Multi-file mode: each file IS a complete variant prompt.
-    # Variant name = filename without .md extension.
-    # Config is still loaded for add_dirs only (variants are ignored).
-    for f in "${PROMPT_FILES[@]}"; do
-        variant_name=$(basename "$f" .md)
-        VARIANTS[$variant_name]="__FILE__:$f"
-    done
-    echo "  Multi-file mode: ${#VARIANTS[@]} prompt files"
+if ${MULTI_FILE_MODE}; then
+  # Multi-file mode: each file IS a complete variant prompt.
+  # Variant name = filename without .md extension.
+  # Config is still loaded for add_dirs only (variants are ignored).
+  for f in "${PROMPT_FILES[@]}"; do
+    variant_name=$(basename "${f}" .md)
+    VARIANTS[${variant_name}]="__FILE__:${f}"
+  done
+  echo "  Multi-file mode: ${#VARIANTS[@]} prompt files"
 fi
 
 # Load config for add_dirs (and variants in single-file mode).
 # Priority: CONFIG env var > config.local.yaml > config.yaml
 CONFIG_FILE="${CONFIG:-}"
-if [ -n "$CONFIG_FILE" ] && [[ "$CONFIG_FILE" != /* ]]; then
-    CONFIG_FILE="$SCRIPT_DIR/$CONFIG_FILE"
+if [[ -n "${CONFIG_FILE}" ]] && [[ "${CONFIG_FILE}" != /* ]]; then
+  CONFIG_FILE="${SCRIPT_DIR}/${CONFIG_FILE}"
 fi
-if [ -z "$CONFIG_FILE" ] && [ -f "$SCRIPT_DIR/config.local.yaml" ]; then
-    CONFIG_FILE="$SCRIPT_DIR/config.local.yaml"
-elif [ -f "$SCRIPT_DIR/config.yaml" ]; then
-    CONFIG_FILE="$SCRIPT_DIR/config.yaml"
+if [[ -z "${CONFIG_FILE}" ]] && [[ -f "${SCRIPT_DIR}/config.local.yaml" ]]; then
+  CONFIG_FILE="${SCRIPT_DIR}/config.local.yaml"
+elif [[ -f "${SCRIPT_DIR}/config.yaml" ]]; then
+  CONFIG_FILE="${SCRIPT_DIR}/config.yaml"
 fi
 
-if [ -n "$CONFIG_FILE" ]; then
-    if $MULTI_FILE_MODE; then
-        # Multi-file: only load work_dir, add_dirs, mcp_config from config.
-        eval "$(python3 -c "
+if [[ -n "${CONFIG_FILE}" ]]; then
+  if ${MULTI_FILE_MODE}; then
+    # Multi-file: only load work_dir, add_dirs, mcp_config from config.
+    # shellcheck disable=SC2312 # eval of python output is intentional
+    eval "$(python3 -c "
 import yaml, shlex
-with open('$CONFIG_FILE') as f:
+with open('${CONFIG_FILE}') as f:
     cfg = yaml.safe_load(f)
 wd = str(cfg.get('work_dir') or '').strip()
 print(f'CFG_WORK_DIR={shlex.quote(wd)}')
@@ -203,11 +210,12 @@ dirs = cfg.get('add_dirs') or []
 parts = [shlex.quote(str(d)) for d in dirs]
 print('ADD_DIRS=(' + ' '.join(parts) + ')')
 ")"
-    else
-        # Single-file: load work_dir, add_dirs, mcp_config, and variants.
-        eval "$(python3 -c "
+  else
+    # Single-file: load work_dir, add_dirs, mcp_config, and variants.
+    # shellcheck disable=SC2312 # eval of python output is intentional
+    eval "$(python3 -c "
 import yaml, shlex
-with open('$CONFIG_FILE') as f:
+with open('${CONFIG_FILE}') as f:
     cfg = yaml.safe_load(f)
 wd = str(cfg.get('work_dir') or '').strip()
 print(f'CFG_WORK_DIR={shlex.quote(wd)}')
@@ -228,57 +236,57 @@ for name, val in variants.items():
     if model:
         print(f'VARIANT_MODELS[{name}]={shlex.quote(model)}')
 ")"
-    fi
-elif ! $MULTI_FILE_MODE; then
-    echo "Warning: No config.yaml found. Using baseline-only variant."
-    VARIANTS[baseline]=""
+  fi
+elif ! ${MULTI_FILE_MODE}; then
+  echo "Warning: No config.yaml found. Using baseline-only variant."
+  VARIANTS[baseline]=""
 fi
 
 # ─── Resolve WORK_DIR ────────────────────────────────────────────────────
 # Priority: WORK_DIR env var > config work_dir > temp directory.
 # Temp dir means Claude has no access to project files (useful for non-code plans).
-if [ -n "$WORK_DIR_ENV" ]; then
-    WORK_DIR="$WORK_DIR_ENV"
-elif [ -n "${CFG_WORK_DIR:-}" ]; then
-    # Resolve relative paths against script directory
-    if [[ "$CFG_WORK_DIR" != /* ]]; then
-        WORK_DIR="$(cd "$SCRIPT_DIR" && cd "$CFG_WORK_DIR" && pwd)"
-    else
-        WORK_DIR="$CFG_WORK_DIR"
-    fi
+if [[ -n "${WORK_DIR_ENV}" ]]; then
+  WORK_DIR="${WORK_DIR_ENV}"
+elif [[ -n "${CFG_WORK_DIR:-}" ]]; then
+  # Resolve relative paths against script directory
+  if [[ "${CFG_WORK_DIR}" != /* ]]; then
+    WORK_DIR="$(cd "${SCRIPT_DIR}" && cd "${CFG_WORK_DIR}" && pwd)"
+  else
+    WORK_DIR="${CFG_WORK_DIR}"
+  fi
 else
-    WORK_DIR=$(mktemp -d)
-    WORK_DIR_IS_TEMP=true
+  WORK_DIR=$(mktemp -d)
+  WORK_DIR_IS_TEMP=true
 fi
 
 # ─── Resolve MCP config ──────────────────────────────────────────────────
 MCP_CONFIG=""
-if [ -n "${CFG_MCP_CONFIG:-}" ]; then
-    if [[ "$CFG_MCP_CONFIG" != /* ]]; then
-        MCP_CONFIG="$SCRIPT_DIR/$CFG_MCP_CONFIG"
-    else
-        MCP_CONFIG="$CFG_MCP_CONFIG"
-    fi
-    if [ ! -f "$MCP_CONFIG" ]; then
-        echo "Warning: mcp_config file not found: $MCP_CONFIG (skipping)"
-        MCP_CONFIG=""
-    fi
+if [[ -n "${CFG_MCP_CONFIG:-}" ]]; then
+  if [[ "${CFG_MCP_CONFIG}" != /* ]]; then
+    MCP_CONFIG="${SCRIPT_DIR}/${CFG_MCP_CONFIG}"
+  else
+    MCP_CONFIG="${CFG_MCP_CONFIG}"
+  fi
+  if [[ ! -f "${MCP_CONFIG}" ]]; then
+    echo "Warning: mcp_config file not found: ${MCP_CONFIG} (skipping)"
+    MCP_CONFIG=""
+  fi
 fi
 
 # NOTE: output_instruction is set per-variant inside the loop (needs md_file path)
 
 # ─── Debug mode: filter to single variant (single-file mode only) ────────
-if [ -n "$DEBUG_MODE" ] && ! $MULTI_FILE_MODE; then
-    if [ -z "${VARIANTS[$DEBUG_VARIANT]+x}" ]; then
-        echo "Error: unknown variant '$DEBUG_VARIANT'"
-        echo "Available: ${!VARIANTS[*]}"
-        exit 1
-    fi
-    # Keep only the selected variant
-    selected_guidance="${VARIANTS[$DEBUG_VARIANT]}"
-    unset VARIANTS
-    declare -A VARIANTS
-    VARIANTS[$DEBUG_VARIANT]="$selected_guidance"
+if [[ -n "${DEBUG_MODE}" ]] && ! ${MULTI_FILE_MODE}; then
+  if [[ -z "${VARIANTS[${DEBUG_VARIANT}]+x}" ]]; then
+    echo "Error: unknown variant '${DEBUG_VARIANT}'"
+    echo "Available: ${!VARIANTS[*]}"
+    exit 1
+  fi
+  # Keep only the selected variant
+  selected_guidance="${VARIANTS[${DEBUG_VARIANT}]}"
+  unset VARIANTS
+  declare -A VARIANTS
+  VARIANTS[${DEBUG_VARIANT}]="${selected_guidance}"
 fi
 
 # ─── Launch sessions ──────────────────────────────────────────────────────
@@ -287,42 +295,42 @@ declare -A PIDS
 STARTED_AT=$(date +%s)
 
 MODE_LABEL=""
-if [ -n "$DEBUG_MODE" ]; then
-    MODE_LABEL=" (DEBUG: ${DEBUG_VARIANT} only)"
+if [[ -n "${DEBUG_MODE}" ]]; then
+  MODE_LABEL=" (DEBUG: ${DEBUG_VARIANT} only)"
 fi
 
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║  Generating ${#VARIANTS[@]} plan variant(s)${MODE_LABEL}"
-echo "║  Model: $MODEL | Max turns: $MAX_TURNS | Timeout: ${TIMEOUT_SECS}s"
-echo "║  Output: $RUN_DIR/"
-echo "║  Session CWD: $WORK_DIR"
+echo "║  Model: ${MODEL} | Max turns: ${MAX_TURNS} | Timeout: ${TIMEOUT_SECS}s"
+echo "║  Output: ${RUN_DIR}/"
+echo "║  Session CWD: ${WORK_DIR}"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
 for variant in "${!VARIANTS[@]}"; do
-    md_file="$RUN_DIR/plan-${variant}.md"
-    logfile="$RUN_DIR/plan-${variant}.log"
+  md_file="${RUN_DIR}/plan-${variant}.md"
+  logfile="${RUN_DIR}/plan-${variant}.log"
 
-    echo "  → Launching: $variant"
-    echo "    Plan: $md_file"
+  echo "  → Launching: ${variant}"
+  echo "    Plan: ${md_file}"
 
-    # OUTPUT FIX: Tell Claude to write the plan to a file using the Write tool.
-    #
-    # Why not --output-format text?
-    #   `--output-format text` returns only the LAST assistant message (the
-    #   `result` field of SDKResultMessage). When Claude researches across
-    #   multiple turns, the actual plan content is in intermediate messages
-    #   and only a summary like "The complete plan has been delivered above"
-    #   gets captured. This is confirmed by GitHub issues #2904 and #3359.
-    #
-    # Why not --output-format stream-json?
-    #   Would capture everything but also includes research notes, tool call
-    #   context, and internal reasoning — noisy and hard to extract cleanly.
-    #
-    # Write tool approach:
-    #   Claude writes the plan directly to the file. Simple, reliable, and
-    #   the plan file contains exactly the plan — nothing else.
-    output_instruction="
+  # OUTPUT FIX: Tell Claude to write the plan to a file using the Write tool.
+  #
+  # Why not --output-format text?
+  #   `--output-format text` returns only the LAST assistant message (the
+  #   `result` field of SDKResultMessage). When Claude researches across
+  #   multiple turns, the actual plan content is in intermediate messages
+  #   and only a summary like "The complete plan has been delivered above"
+  #   gets captured. This is confirmed by GitHub issues #2904 and #3359.
+  #
+  # Why not --output-format stream-json?
+  #   Would capture everything but also includes research notes, tool call
+  #   context, and internal reasoning — noisy and hard to extract cleanly.
+  #
+  # Write tool approach:
+  #   Claude writes the plan directly to the file. Simple, reliable, and
+  #   the plan file contains exactly the plan — nothing else.
+  output_instruction="
 
 ## Output format (CRITICAL)
 Write the COMPLETE plan to this exact file path using the Write tool:
@@ -340,61 +348,61 @@ Rules:
 6. After writing the file, output a brief confirmation (e.g., 'Plan written
    to ${md_file}')"
 
-    # Build the full prompt:
-    #   Multi-file:  file content + shared context + output instruction
-    #   Single-file: base prompt + variant guidance + shared context + output instruction
-    variant_value="${VARIANTS[$variant]}"
-    if [[ "$variant_value" == __FILE__:* ]]; then
-        prompt_file="${variant_value#__FILE__:}"
-        full_prompt="$(cat "$prompt_file")${SHARED_CONTEXT}${output_instruction}"
-    else
-        full_prompt="${BASE_PROMPT}${variant_value}${SHARED_CONTEXT}${output_instruction}"
+  # Build the full prompt:
+  #   Multi-file:  file content + shared context + output instruction
+  #   Single-file: base prompt + variant guidance + shared context + output instruction
+  variant_value="${VARIANTS[${variant}]}"
+  if [[ "${variant_value}" == __FILE__:* ]]; then
+    prompt_file="${variant_value#__FILE__:}"
+    full_prompt="$(cat "${prompt_file}")${SHARED_CONTEXT}${output_instruction}"
+  else
+    full_prompt="${BASE_PROMPT}${variant_value}${SHARED_CONTEXT}${output_instruction}"
+  fi
+
+  # Per-variant model override (falls back to global $MODEL)
+  variant_model="${VARIANT_MODELS[${variant}]:-${MODEL}}"
+
+  # Build extra flags: --add-dir, --mcp-config
+  extra_flags=()
+  for dir in "${ADD_DIRS[@]}"; do
+    if [[ -d "${dir}" ]]; then
+      extra_flags+=(--add-dir "${dir}")
     fi
+  done
+  if [[ -n "${MCP_CONFIG}" ]]; then
+    extra_flags+=(--mcp-config "${MCP_CONFIG}")
+  fi
 
-    # Per-variant model override (falls back to global $MODEL)
-    variant_model="${VARIANT_MODELS[$variant]:-$MODEL}"
+  # Run from WORK_DIR so all repos within it are accessible to Claude.
+  # If WORK_DIR is a temp dir, Claude has no project files to read.
+  # Claude writes the plan to $md_file via the Write tool.
+  # stdout + stderr go to logfile for debugging.
+  #
+  # --dangerously-skip-permissions: Required for headless -p mode.
+  #   Without it, Write and WebSearch are denied ("you haven't granted
+  #   permissions yet") because there's no interactive user to approve.
+  #   Safe here: sessions only read source files + write one plan file.
+  (cd "${WORK_DIR}" \
+    && CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000 \
+      timeout "${TIMEOUT_SECS}" \
+      claude -p "${full_prompt}" \
+      --model "${variant_model}" \
+      --output-format text \
+      --max-turns "${MAX_TURNS}" \
+      --dangerously-skip-permissions \
+      "${extra_flags[@]}" \
+      >"${logfile}" 2>&1) &
 
-    # Build extra flags: --add-dir, --mcp-config
-    extra_flags=()
-    for dir in "${ADD_DIRS[@]}"; do
-        if [ -d "$dir" ]; then
-            extra_flags+=(--add-dir "$dir")
-        fi
-    done
-    if [ -n "$MCP_CONFIG" ]; then
-        extra_flags+=(--mcp-config "$MCP_CONFIG")
-    fi
+  PIDS[${variant}]=$!
 
-    # Run from WORK_DIR so all repos within it are accessible to Claude.
-    # If WORK_DIR is a temp dir, Claude has no project files to read.
-    # Claude writes the plan to $md_file via the Write tool.
-    # stdout + stderr go to logfile for debugging.
-    #
-    # --dangerously-skip-permissions: Required for headless -p mode.
-    #   Without it, Write and WebSearch are denied ("you haven't granted
-    #   permissions yet") because there's no interactive user to approve.
-    #   Safe here: sessions only read source files + write one plan file.
-    (cd "$WORK_DIR" && \
-        CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000 \
-        timeout "$TIMEOUT_SECS" \
-        claude -p "$full_prompt" \
-            --model "$variant_model" \
-            --output-format text \
-            --max-turns "$MAX_TURNS" \
-            --dangerously-skip-permissions \
-            "${extra_flags[@]}" \
-            > "$logfile" 2>&1) &
-
-    PIDS[$variant]=$!
-
-    # Stagger launches to reduce rate limit pressure.
-    # All sessions share the same org-level RPM/TPM limits.
-    sleep "$STAGGER_SECS"
+  # Stagger launches to reduce rate limit pressure.
+  # All sessions share the same org-level RPM/TPM limits.
+  sleep "${STAGGER_SECS}"
 done
 
 echo ""
 echo "All ${#VARIANTS[@]} sessions launched (PIDs: ${PIDS[*]})"
-echo "Waiting for completion... ($MODEL: ~15-25 min per session, ${TIMEOUT_SECS}s timeout)"
+echo "Waiting for completion... (${MODEL}: ~15-25 min per session, ${TIMEOUT_SECS}s timeout)"
 echo ""
 
 # ─── Wait and validate ────────────────────────────────────────────────────
@@ -403,82 +411,82 @@ failures=0
 succeeded=0
 
 for variant in "${!PIDS[@]}"; do
-    pid=${PIDS[$variant]}
-    md_file="$RUN_DIR/plan-${variant}.md"
-    logfile="$RUN_DIR/plan-${variant}.log"
+  pid=${PIDS[${variant}]}
+  md_file="${RUN_DIR}/plan-${variant}.md"
+  logfile="${RUN_DIR}/plan-${variant}.log"
 
-    if wait "$pid"; then
-        if [ -f "$md_file" ]; then
-            size=$(wc -c < "$md_file" | tr -d ' ')
-            lines=$(wc -l < "$md_file" | tr -d ' ')
+  if wait "${pid}"; then
+    if [[ -f "${md_file}" ]]; then
+      size=$(wc -c <"${md_file}" | tr -d ' ')
+      lines=$(wc -l <"${md_file}" | tr -d ' ')
 
-            if [ "$size" -lt "$MIN_OUTPUT_BYTES" ]; then
-                echo "  ⚠ $variant: plan too small (${size} bytes < ${MIN_OUTPUT_BYTES}). Likely incomplete."
-                echo "    Check: $logfile"
-                ((failures++)) || true
-            else
-                echo "  ✓ $variant completed (${lines} lines, ${size} bytes)"
-                ((succeeded++)) || true
-            fi
-        else
-            echo "  ✗ $variant: plan file not created (Claude didn't use Write tool)"
-            echo "    Check: $logfile"
-            ((failures++)) || true
-        fi
-    else
-        exit_code=$?
-        if [ "$exit_code" -eq 124 ]; then
-            echo "  ✗ $variant TIMED OUT after ${TIMEOUT_SECS}s"
-        else
-            echo "  ✗ $variant FAILED (exit code: $exit_code)"
-        fi
-        echo "    Check: $logfile"
-        # Check if partial plan was written before timeout/failure
-        if [ -f "$md_file" ]; then
-            size=$(wc -c < "$md_file" | tr -d ' ')
-            echo "    (partial plan exists: ${size} bytes)"
-        fi
+      if [[ "${size}" -lt "${MIN_OUTPUT_BYTES}" ]]; then
+        echo "  ⚠ ${variant}: plan too small (${size} bytes < ${MIN_OUTPUT_BYTES}). Likely incomplete."
+        echo "    Check: ${logfile}"
         ((failures++)) || true
+      else
+        echo "  ✓ ${variant} completed (${lines} lines, ${size} bytes)"
+        ((succeeded++)) || true
+      fi
+    else
+      echo "  ✗ ${variant}: plan file not created (Claude didn't use Write tool)"
+      echo "    Check: ${logfile}"
+      ((failures++)) || true
     fi
+  else
+    exit_code=$?
+    if [[ "${exit_code}" -eq 124 ]]; then
+      echo "  ✗ ${variant} TIMED OUT after ${TIMEOUT_SECS}s"
+    else
+      echo "  ✗ ${variant} FAILED (exit code: ${exit_code})"
+    fi
+    echo "    Check: ${logfile}"
+    # Check if partial plan was written before timeout/failure
+    if [[ -f "${md_file}" ]]; then
+      size=$(wc -c <"${md_file}" | tr -d ' ')
+      echo "    (partial plan exists: ${size} bytes)"
+    fi
+    ((failures++)) || true
+  fi
 done
 
 # ─── Summary ───────────────────────────────────────────────────────────────
 
-ln -sfn "$TIMESTAMP" "$PLANS_DIR/$PROMPT_NAME/latest"
+ln -sfn "${TIMESTAMP}" "${PLANS_DIR}/${PROMPT_NAME}/latest"
 
-ELAPSED=$(( $(date +%s) - STARTED_AT ))
+ELAPSED=$(($(date +%s) - STARTED_AT))
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║  Done in ${ELAPSED}s. ${succeeded}/${#VARIANTS[@]} plans succeeded.                       ║"
-echo "║  Output: $RUN_DIR/                                         ║"
+echo "║  Output: ${RUN_DIR}/                                         ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
-ls -lh "$RUN_DIR"/plan-*.md 2>/dev/null
+ls -lh "${RUN_DIR}"/plan-*.md 2>/dev/null
 echo ""
 
-if [ $succeeded -eq 0 ]; then
-    echo "ERROR: No plans generated. Check logs in $RUN_DIR/"
-    exit 1
+if [[ "${succeeded}" -eq 0 ]]; then
+  echo "ERROR: No plans generated. Check logs in ${RUN_DIR}/"
+  exit 1
 fi
 
-if [ $failures -gt 0 ]; then
-    echo "⚠  $failures plan(s) failed. Check logs:"
-    for variant in "${!VARIANTS[@]}"; do
-        if [ ! -s "$RUN_DIR/plan-${variant}.md" ]; then
-            echo "    $RUN_DIR/plan-${variant}.log"
-        fi
-    done
-    echo ""
+if [[ "${failures}" -gt 0 ]]; then
+  echo "⚠  ${failures} plan(s) failed. Check logs:"
+  for variant in "${!VARIANTS[@]}"; do
+    if [[ ! -s "${RUN_DIR}/plan-${variant}.md" ]]; then
+      echo "    ${RUN_DIR}/plan-${variant}.log"
+    fi
+  done
+  echo ""
 fi
 
 echo "Next step — merge plans:"
-echo "  ./merge-plans.sh $RUN_DIR"
+echo "  ./merge-plans.sh ${RUN_DIR}"
 echo ""
 echo "  or using the symlink:"
-echo "  ./merge-plans.sh $PLANS_DIR/$PROMPT_NAME/latest"
+echo "  ./merge-plans.sh ${PLANS_DIR}/${PROMPT_NAME}/latest"
 
 # Clean up temp work directory if we created one
-if [ "${WORK_DIR_IS_TEMP:-}" = "true" ] && [ -d "$WORK_DIR" ]; then
-    rm -rf "$WORK_DIR"
+if [[ "${WORK_DIR_IS_TEMP:-}" = "true" ]] && [[ -d "${WORK_DIR}" ]]; then
+  rm -rf "${WORK_DIR}"
 fi

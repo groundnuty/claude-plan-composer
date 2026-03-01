@@ -79,6 +79,12 @@ advocate_instructions: |
 output_goal: |
   The merged plan must be standalone...
 output_title: "Merged Plan"
+# Quality principles verified after synthesis — the merge revises if violated.
+constitution:
+  - "Every trade-off must be explicitly acknowledged with pros and cons"
+  - "No section should be purely aspirational — each needs a concrete next step"
+  - "Risks identified in any source plan must appear in the merged plan"
+  - "The plan must be self-consistent — no section contradicts another"
 ```
 
 Usage: `MERGE_CONFIG=projects/hackathon/merge-config.yaml ./merge-plans.sh generated-plans/latest`
