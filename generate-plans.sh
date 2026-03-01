@@ -193,10 +193,12 @@ CONFIG_FILE="${CONFIG:-}"
 if [[ -n "${CONFIG_FILE}" ]] && [[ "${CONFIG_FILE}" != /* ]]; then
   CONFIG_FILE="${SCRIPT_DIR}/${CONFIG_FILE}"
 fi
-if [[ -z "${CONFIG_FILE}" ]] && [[ -f "${SCRIPT_DIR}/config.local.yaml" ]]; then
-  CONFIG_FILE="${SCRIPT_DIR}/config.local.yaml"
-elif [[ -f "${SCRIPT_DIR}/config.yaml" ]]; then
-  CONFIG_FILE="${SCRIPT_DIR}/config.yaml"
+if [[ -z "${CONFIG_FILE}" ]]; then
+  if [[ -f "${SCRIPT_DIR}/config.local.yaml" ]]; then
+    CONFIG_FILE="${SCRIPT_DIR}/config.local.yaml"
+  elif [[ -f "${SCRIPT_DIR}/config.yaml" ]]; then
+    CONFIG_FILE="${SCRIPT_DIR}/config.yaml"
+  fi
 fi
 
 if [[ -n "${CONFIG_FILE}" ]]; then
