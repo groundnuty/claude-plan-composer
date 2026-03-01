@@ -52,6 +52,19 @@ variants:
     Take a wide view...
 ```
 
+### Lens strategies
+
+The default analytical lenses (baseline/simplicity/depth/breadth) are domain-agnostic. For better results, swap in domain-specific alternatives:
+
+| Strategy | Idea | Example variants |
+|----------|------|-----------------|
+| **Persona** | Shift *who* is thinking | architect, pragmatist, skeptic, visionary |
+| **Constraint** | Force different solution spaces | fast-and-cheap, unlimited-time, scale-first, legacy-compat |
+| **Adversarial** | One contrarian that must differ structurally | contrarian |
+| **Model cascade** | Sonnet for generation, Opus for merge | `model: sonnet` on 3 of 4 variants (~48% savings) |
+
+See `config.yaml` for commented examples of each strategy.
+
 - `config.yaml` — generic defaults (committed to repo)
 - `config.local.yaml` — personal overrides (gitignored)
 - `projects/` — optional git submodule for project-specific configs (private)
