@@ -13,13 +13,28 @@ The scripts are domain-agnostic. Domain-specific configuration lives in `config.
 1. **Generate** (`generate-plans.sh`): Launches parallel `claude -p` sessions, each with a different prompt. Two modes:
    - **Single-file**: One prompt + variant guidance from `config.yaml` (default: 4 variants).
    - **Multi-file**: Each prompt file is a standalone variant. Supports `--context=shared.md` to append common context to all prompts.
+   - Flags: `--auto-lenses` generates task-specific variant lenses via LLM before launching. `--sequential-diversity` runs variants in two waves — wave 1 generates, wave 2 gets skeleton outlines of wave 1 plans as a diversity constraint.
    Each session writes a plan to a file via the Write tool.
 
-2. **Merge** (`merge-plans.sh`): Takes the generated plans and produces a merged plan. Two modes:
+2. **Evaluate** (`evaluate-plans.sh`): Pre-merge analysis of generated plans.
+   - **Phase 1** (zero cost): Bash-level convergence check — extracts section headings from each plan, computes pairwise Jaccard similarity, warns about too-similar or too-divergent plans.
+   - **Phase 2** (optional LLM): Coverage matrix, gap detection, per-plan strengths. Uses a cheap model (default: haiku). Produces `evaluation.md` and `evaluation.json`.
+   - Exit code 1 if critical gaps found.
+
+3. **Merge** (`merge-plans.sh`): Takes the generated plans and produces a merged plan. Two modes:
    - `agent-teams` (default): Interactive Claude session with Agent Teams — spawns advocate agents that debate each plan, then the lead synthesizes.
    - `simple`: Headless `claude -p` that reads all plans inline and produces a merged plan.
+   - Merge prompts use a 3-phase structure: Analysis (with conflict classification), Synthesis (with minority insight scanning), and Constitutional Review.
+   - Supports `comparison_method: pairwise` for C(N,2) pairwise tournament scoring (simple mode only).
 
-3. **Monitor** (`monitor-sessions.sh`): Real-time dashboard showing running Claude sessions — tracks PID, variant, transcript size, tool calls, subagents, token usage, context window utilization, compactions, and last action. Parses JSONL transcripts from `~/.claude/projects/`. Auto-exits in `--watch` mode when all sessions finish.
+4. **Verify** (`verify-plan.sh`): Post-merge quality gates on the merged plan.
+   - **Gate 1: CONSISTENCY** — checks for internal contradictions.
+   - **Gate 2: COMPLETENESS** — checks for content lost from source plans.
+   - **Gate 3: ACTIONABILITY** — checks that each section has concrete next steps.
+   - Optional `--pre-mortem` flag for failure scenario analysis.
+   - Exit code 1 if any gate fails.
+
+5. **Monitor** (`monitor-sessions.sh`): Real-time dashboard showing running Claude sessions — tracks PID, variant, transcript size, tool calls, subagents, token usage, context window utilization, compactions, and last action. Parses JSONL transcripts from `~/.claude/projects/`. Auto-exits in `--watch` mode when all sessions finish.
 
 ## Configuration
 
@@ -83,10 +98,20 @@ work_dir: ""          # empty = temp dir; set for codebase-aware merge
 mcp_config: ""        # MCP server config JSON
 project_description: "the project"
 role: "an expert analyst"
+
+# holistic (default): evaluate all plans per dimension simultaneously
+# pairwise: C(N,2) pairwise tournament, then tally (more reliable for 4+ plans)
+comparison_method: holistic
+
 dimensions:
   - Approach and strategy
   - Scope and priorities
   - Technical depth and specificity
+# Weighted form (used in pairwise scoring and synthesis):
+#   - name: "Approach and strategy"
+#     weight: 0.3
+#   - "Technical depth"   # weight defaults to equal share
+
 advocate_instructions: |
   Argue for its approach in each dimension...
 output_goal: |
@@ -119,9 +144,24 @@ CONFIG=projects/hyperflow/config.yaml ./generate-plans.sh my-prompt.md
 ./generate-plans.sh --context=projects/agentregistry/prompts/00-common-context.md \
   projects/agentregistry/prompts/0[1-4]-*.md
 
+# Auto-lenses: LLM generates task-specific variant perspectives (single-file only)
+./generate-plans.sh --auto-lenses my-prompt.md
+LENS_MODEL=sonnet LENS_COUNT=6 ./generate-plans.sh --auto-lenses my-prompt.md
+
+# Sequential diversity: wave 1 generates, wave 2 gets skeleton outlines as constraint
+./generate-plans.sh --sequential-diversity my-prompt.md
+
+# Both flags can be combined
+./generate-plans.sh --auto-lenses --sequential-diversity my-prompt.md
+
 # Debug mode: single variant, sonnet, fast
 ./generate-plans.sh --debug my-prompt.md           # baseline only
 ./generate-plans.sh --debug=depth my-prompt.md     # specific variant
+
+# Evaluate plans before merging (optional but recommended)
+./evaluate-plans.sh generated-plans/<prompt-name>/latest
+./evaluate-plans.sh --no-llm generated-plans/latest   # convergence check only (zero cost)
+EVAL_MODEL=sonnet ./evaluate-plans.sh generated-plans/latest
 
 # Merge plans (interactive agent-teams debate)
 ./merge-plans.sh generated-plans/<prompt-name>/latest
@@ -129,8 +169,16 @@ CONFIG=projects/hyperflow/config.yaml ./generate-plans.sh my-prompt.md
 # Merge plans (headless, automated)
 MERGE_MODE=simple ./merge-plans.sh generated-plans/<prompt-name>/latest
 
+# Merge with pairwise tournament comparison
+MERGE_MODE=simple MERGE_CONFIG=my-pairwise.yaml ./merge-plans.sh generated-plans/latest
+
 # Merge with project-specific config
 MERGE_CONFIG=projects/agentregistry/merge-config.yaml ./merge-plans.sh generated-plans/multi-*/latest
+
+# Verify merged plan against quality gates
+./verify-plan.sh generated-plans/<prompt-name>/latest
+./verify-plan.sh --pre-mortem generated-plans/latest   # includes failure scenario analysis
+VERIFY_MODEL=haiku ./verify-plan.sh generated-plans/latest
 
 # Monitor running sessions
 ./monitor-sessions.sh              # one-shot table
@@ -174,7 +222,7 @@ generated-plans/<name>/latest -> <timestamp>   # symlink
 
 | Variable | Default (normal) | Default (debug) | Purpose |
 |---|---|---|---|
-| `MODEL` | `opus` | `sonnet` | Claude model |
+| `MODEL` | `opus` | `sonnet` | Claude model for plan generation |
 | `MAX_TURNS` | `80` | `20` | Max API round-trips per session |
 | `TIMEOUT_SECS` | `3600` | `600` | Hard kill timeout |
 | `WORK_DIR` | from config | from config | CWD for Claude sessions (overrides config `work_dir`) |
@@ -182,6 +230,12 @@ generated-plans/<name>/latest -> <timestamp>   # symlink
 | `MERGE_MODE` | `agent-teams` | — | `agent-teams` or `simple` |
 | `MERGE_CONFIG` | — | — | Path to merge YAML config file |
 | `DEBUG` | — | `1` | Enable debug mode |
+| `AUTO_LENSES` | — | — | Enable auto-lens generation (or use `--auto-lenses` flag) |
+| `LENS_MODEL` | `haiku` | — | Model for auto-lens generation |
+| `LENS_COUNT` | `4` | — | Number of lenses to generate |
+| `SEQUENTIAL_DIVERSITY` | — | — | Enable two-wave diversity (or use `--sequential-diversity` flag) |
+| `EVAL_MODEL` | `haiku` | — | Model for `evaluate-plans.sh` LLM evaluation |
+| `VERIFY_MODEL` | `sonnet` | — | Model for `verify-plan.sh` quality gates |
 
 ## Project-Specific Configs (`projects/` submodule)
 
@@ -206,9 +260,30 @@ The `demo/` directory contains tools for recording terminal demos:
 
 Usage: `asciinema rec demo.cast -c "MODEL=sonnet MAX_TURNS=8 ./demo/record-demo.sh"`
 
+## Development
+
+The project uses [devbox](https://www.jetpack.io/devbox) for reproducible tooling. All `make` targets run through `devbox run`.
+
+```bash
+make check     # Full verification: syntax + shellcheck + shfmt + bats tests
+make fix       # Auto-fix: format in-place, then lint
+make test      # Run bats tests only
+make lint      # ShellCheck only
+make fmt       # shfmt format in-place
+make fmt-check # shfmt check without modifying
+```
+
+Test structure (44 tests across 5 files):
+- `test/merge-config.bats` — config parsing, weighted dimensions, constitution, comparison_method validation
+- `test/generate-plans.bats` — flag parsing, multi-file mode, sequential diversity
+- `test/evaluate-plans.bats` — convergence check, LLM evaluation
+- `test/auto-lenses.bats` — lens generation, edge cases
+- `test/verify-plan.bats` — quality gates, pre-mortem
+
 ## Research Notes
 
 The `research/` directory contains analysis that informed the design:
 - `number-of-llms-sessions.md` — Why N=4 sessions (logarithmic returns, correlated errors, merge cost explosion)
 - `cloud-sessions-analysis.md` — Comparison of local `claude -p`, cloud sessions, and agent teams approaches
 - `turns-in-claude.md` — How turns work, subagent turn counting, and `--max-turns` behavior
+- `methodology-improvements.md` — 50+ references: conflict classification, constitutional AI, pairwise comparison, sequential diversity conditioning, and the 7-PR improvement roadmap

@@ -35,10 +35,24 @@ This project forces multiple perspectives by running parallel Claude Code sessio
               └──────────────┴───────┼───────┴──────────────┘
                                      ▼
                           ┌──────────────────────┐
+                          │   Evaluate (optional)│
+                          │   convergence check  │
+                          │   + gap detection    │
+                          └──────────┬───────────┘
+                                     ▼
+                          ┌──────────────────────┐
                           │     Merge phase      │
                           │     (agent-team      │
                           │      debate or       │
                           │      automated)      │
+                          └──────────┬───────────┘
+                                     ▼
+                          ┌──────────────────────┐
+                          │   Verify (optional)  │
+                          │   quality gates:     │
+                          │   consistency,       │
+                          │   completeness,      │
+                          │   actionability      │
                           └──────────┬───────────┘
                                      ▼
                           ┌──────────────────────┐
@@ -53,9 +67,15 @@ This project forces multiple perspectives by running parallel Claude Code sessio
 - **Depth**: "Go deep on specifics. Show detailed examples, exact steps, concrete patterns."
 - **Breadth**: "Take a wide view. Consider alternative approaches, trade-offs, and second-order effects."
 
-**Phase 2 — Merge.** A separate Claude session (or an Agent Teams debate with competing advocates) compares all plans dimension by dimension — staging strategy, MVP scope, testing approach, deployment detail, code architecture — and synthesizes a merged plan taking the best of each.
+Optional: `--auto-lenses` generates task-specific lenses via LLM instead of using config variants. `--sequential-diversity` runs variants in two waves — wave 2 gets skeleton outlines from wave 1 as a structural diversity constraint.
 
-**Phase 3 — Review.** The merged plan is a file on disk. A human reads it, iterates, and adopts it.
+**Phase 2 — Evaluate (optional).** `evaluate-plans.sh` analyzes generated plans before merging. A zero-cost convergence check computes pairwise Jaccard similarity of section headings. An optional LLM pass (default: haiku) produces a coverage matrix and gap detection.
+
+**Phase 3 — Merge.** A separate Claude session (or an Agent Teams debate with competing advocates) compares all plans dimension by dimension and synthesizes a merged plan. The merge uses a 3-phase prompt: Analysis (with conflict classification), Synthesis (with minority insight scanning), and Constitutional Review against quality principles. Supports holistic comparison (default) or pairwise tournament scoring.
+
+**Phase 4 — Verify (optional).** `verify-plan.sh` runs the merged plan through three quality gates: consistency (no internal contradictions), completeness (no content lost from source plans), and actionability (concrete next steps in every section). Optional `--pre-mortem` flag adds failure scenario analysis.
+
+**Phase 5 — Review.** The merged plan is a file on disk. A human reads it, iterates, and adopts it.
 
 The critical insight: **diversity comes from prompt variation, not from repetition.** Running the same prompt 10 times produces 10 similar plans with [correlated errors](https://arxiv.org/abs/2506.07962). Running N variants (default: 4) that force different trade-offs produces genuinely different perspectives.
 
@@ -77,14 +97,17 @@ This isn't a heuristic — the approach is grounded in specific findings from LL
 
 ## What's in this repo
 
-Three bash scripts and a research directory:
+Five bash scripts, a test suite, and a research directory:
 
 | File | Purpose |
 |---|---|
-| `generate-plans.sh` | Launches parallel `claude -p` sessions with prompt variants (default: 4, configurable). Each session researches and writes a plan via the Write tool. |
-| `merge-plans.sh` | Merges generated plans. Default mode: interactive Agent Teams debate with competing advocates. Alternative: headless automated merge. |
-| `monitor-sessions.sh` | Real-time dashboard for running sessions — tracks PIDs, token usage, context window, subagents, tool calls, and last action by parsing JSONL transcripts. |
-| `research/` | Analysis documents that informed the design decisions (optimal N, turn counting, cloud vs. local trade-offs). |
+| `generate-plans.sh` | Launches parallel `claude -p` sessions with prompt variants (default: 4, configurable). Supports `--auto-lenses` and `--sequential-diversity`. |
+| `evaluate-plans.sh` | Pre-merge plan analysis: zero-cost convergence check (Jaccard similarity) + optional LLM evaluation (coverage matrix, gap detection). |
+| `merge-plans.sh` | Merges generated plans. Agent Teams debate (default) or headless merge. Supports holistic or pairwise tournament comparison. |
+| `verify-plan.sh` | Post-merge quality gates: consistency, completeness, actionability. Optional `--pre-mortem` failure analysis. |
+| `monitor-sessions.sh` | Real-time dashboard for running sessions — tracks PIDs, token usage, context window, subagents, tool calls, and last action. |
+| `test/` | 44 bats tests across 5 files covering config parsing, flag handling, convergence, and quality gates. |
+| `research/` | Analysis documents that informed the design decisions (optimal N, methodology improvements with 50+ references). |
 | `AGENTS.md` | Detailed usage reference for working with this project in Claude Code. |
 
 ### Quick start
@@ -100,12 +123,14 @@ cat test-prompt.md
 MERGE_MODE=simple ./merge-plans.sh generated-plans/test-prompt/latest
 ```
 
-Full generation with all variants (Opus, default 4, ~15-25 min, ~$20-60):
+Full pipeline with all variants (Opus, default 4, ~15-25 min, ~$20-60):
 
 ```bash
 ./generate-plans.sh my-prompt.md
 ./monitor-sessions.sh --watch          # watch progress in another terminal
-./merge-plans.sh generated-plans/my-prompt/latest   # interactive agent-team merge
+./evaluate-plans.sh generated-plans/my-prompt/latest           # check convergence + gaps
+./merge-plans.sh generated-plans/my-prompt/latest              # interactive agent-team merge
+./verify-plan.sh generated-plans/my-prompt/latest              # quality gates on merged plan
 ```
 
 See [AGENTS.md](AGENTS.md) for all options, environment variables, and output structure.
@@ -120,7 +145,11 @@ The scripts are domain-agnostic — all domain-specific content lives in your pr
 
 **File access**: Set `work_dir` in `config.yaml` to a directory containing the repos Claude should access. Leave it empty for plans that don't need codebase access (strategy, architecture, non-technical topics).
 
-**Merge dimensions**: Customize comparison dimensions in `merge-config.yaml` to match your domain.
+**Merge dimensions**: Customize comparison dimensions in `merge-config.yaml` to match your domain. Use weighted dimensions (`{name, weight}`) to prioritize what matters. Set `comparison_method: pairwise` for more reliable comparison with 4+ plans. Add custom `constitution` principles to enforce your quality standards.
+
+**Auto-lenses**: Use `--auto-lenses` to let the LLM generate task-specific variant perspectives from your prompt, instead of using generic config variants. Good for one-off prompts where domain-specific lenses add value.
+
+**Sequential diversity**: Use `--sequential-diversity` to run variants in two waves. Wave 1 runs first; wave 2 receives skeleton outlines of wave 1 plans as a structural diversity constraint. This reduces convergence between plans at zero extra LLM cost for the skeleton extraction.
 
 **Lens strategies**: The default variants (baseline/simplicity/depth/breadth) are analytical lenses — they vary *how* the model thinks. For domain-specific work, consider alternatives:
 
@@ -139,7 +168,7 @@ The key requirement is that your prompt file gives Claude enough context to prod
 - **Cost: ~$20-60 per run.** Default 4 Opus sessions plus a merge session. Use `--debug` mode (single Sonnet session) to iterate on prompts cheaply before a full run.
 - **Same-model correlation is reducible, not eliminable.** Prompt variation reduces correlated blind spots but doesn't remove them entirely. Three mitigations help: (1) per-variant model overrides in `config.yaml` — different model sizes have different biases, (2) `work_dir` and `add_dirs` give Claude access to your codebase so it can read internal APIs directly, (3) `mcp_config` connects Claude to external knowledge sources (internal docs, wikis, search indexes) it wasn't trained on.
 - **The merge step has its own biases, but they're steerable.** The LLM doing the merge may favor familiar patterns. Mitigations: configurable comparison dimensions and role in `merge-config.yaml` steer what gets prioritized; Agent Teams debate forces advocates to concede weaknesses and acknowledge competing strengths; interactive mode lets the human redirect the synthesis in real time; and you can use a different model for merge than generation (e.g., `MODEL=sonnet ./merge-plans.sh`).
-- **Quality assessment is ultimately human.** Automated scoring of plans is an unsolved research problem — there's no reliable programmatic "plan quality score," and LLM-as-judge has the same model biases the pipeline is trying to overcome. The toolkit supports your judgment with structured comparison tables, dimension-by-dimension winners, and advocate debates that surface trade-offs — but the final call is yours, by design.
+- **Quality assessment is ultimately human.** Automated scoring of plans is an unsolved research problem — there's no reliable programmatic "plan quality score," and LLM-as-judge has the same model biases the pipeline is trying to overcome. The toolkit includes `evaluate-plans.sh` (pre-merge convergence and gap detection) and `verify-plan.sh` (post-merge quality gates) as automated sanity checks, but these supplement — not replace — human judgment. The final call is yours, by design.
 - **Requires Claude Code CLI** with API access (Max plan or direct API key). Sessions share org-level rate limits.
 
 ## License
