@@ -627,10 +627,17 @@ echo "║  Session CWD: ${WORK_DIR}"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Collect variant names into an ordered array
-all_variants=("${!VARIANTS[@]}")
+# Collect variant names into a sorted array (deterministic wave splitting)
+# shellcheck disable=SC2312 # printf | sort can't fail meaningfully
+mapfile -t all_variants < <(printf '%s\n' "${!VARIANTS[@]}" | sort)
 failures=0
 succeeded=0
+
+# Warn if sequential-diversity has too few variants to be useful
+if [[ -n "${SEQUENTIAL_DIVERSITY}" ]] && [[ ${#all_variants[@]} -lt 3 ]]; then
+  echo "Warning: --sequential-diversity requires >= 3 variants (got ${#all_variants[@]}). Running all-parallel."
+  SEQUENTIAL_DIVERSITY=""
+fi
 
 if [[ -n "${SEQUENTIAL_DIVERSITY}" ]] && [[ ${#all_variants[@]} -ge 3 ]]; then
   # ── Two-wave generation ──────────────────────────────────────────────
