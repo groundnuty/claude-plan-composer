@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
-# Tests for merge-plans.sh config parsing — constitution field.
+# Tests for merge-plans.sh config parsing — constitution, comparison method,
+# weighted dimensions.
 
 setup() {
   load 'test_helper/common-setup'
@@ -12,17 +13,18 @@ teardown() {
 }
 
 # Helper: run the Python config parser in isolation.
-# Takes a merge-config.yaml path and outputs the extracted shell variables.
+# Mirrors the parser in merge-plans.sh — extracts all MCFG_* shell variables.
 _parse_merge_config() {
   local config_file="$1"
   python3 -c "
-import yaml, shlex, sys
+import yaml, shlex, json, sys
 
 defaults = {
     'work_dir': '',
     'mcp_config': '',
     'project_description': 'the project',
     'role': 'an expert analyst',
+    'comparison_method': 'holistic',
     'dimensions': [
         'Approach and strategy',
         'Scope and priorities',
@@ -55,9 +57,29 @@ print(f'MCFG_PROJECT={shlex.quote(str(cfg[\"project_description\"]))}')
 print(f'MCFG_ROLE={shlex.quote(str(cfg[\"role\"]))}')
 print(f'MCFG_TITLE={shlex.quote(str(cfg[\"output_title\"]))}')
 
-dims = cfg.get('dimensions', defaults['dimensions'])
-dim_list = chr(10).join(f'   - {d}' for d in dims)
+cm = str(cfg.get('comparison_method', 'holistic')).strip()
+print(f'MCFG_COMPARISON={shlex.quote(cm)}')
+
+raw_dims = cfg.get('dimensions', defaults['dimensions'])
+dim_names = []
+dim_weights = {}
+for d in raw_dims:
+    if isinstance(d, dict):
+        name = str(d.get('name', ''))
+        weight = d.get('weight')
+        dim_names.append(name)
+        if weight is not None:
+            dim_weights[name] = float(weight)
+    else:
+        dim_names.append(str(d))
+
+dim_list = chr(10).join(f'   - {n}' for n in dim_names)
 print(f'MCFG_DIMENSIONS={shlex.quote(dim_list)}')
+print(f'MCFG_DIM_NAMES_JSON={shlex.quote(json.dumps(dim_names))}')
+if dim_weights:
+    print(f'MCFG_DIM_WEIGHTS_JSON={shlex.quote(json.dumps(dim_weights))}')
+else:
+    print(\"MCFG_DIM_WEIGHTS_JSON='{}'\")
 
 const = cfg.get('constitution', defaults['constitution'])
 const_list = chr(10).join(f'   - {c}' for c in const)
@@ -119,4 +141,81 @@ EOF
   assert_output --partial "Custom dimension A"
   assert_output --partial "Custom dimension B"
   assert_output --partial "Custom principle"
+}
+
+# ─── Comparison method ─────────────────────────────────────────────────
+
+@test "extracts comparison_method from config" {
+  cat >"${TEST_TEMP_DIR}/merge-config.yaml" <<'EOF'
+project_description: "test project"
+comparison_method: pairwise
+EOF
+
+  run _parse_merge_config "${TEST_TEMP_DIR}/merge-config.yaml"
+  assert_success
+  assert_output --partial "MCFG_COMPARISON=pairwise"
+}
+
+@test "defaults comparison_method to holistic when absent" {
+  cat >"${TEST_TEMP_DIR}/merge-config.yaml" <<'EOF'
+project_description: "test project"
+EOF
+
+  run _parse_merge_config "${TEST_TEMP_DIR}/merge-config.yaml"
+  assert_success
+  assert_output --partial "MCFG_COMPARISON=holistic"
+}
+
+# ─── Weighted dimensions ──────────────────────────────────────────────
+
+@test "parses weighted dimensions (dict form)" {
+  cat >"${TEST_TEMP_DIR}/merge-config.yaml" <<'EOF'
+project_description: "test project"
+dimensions:
+  - name: "Approach and strategy"
+    weight: 0.3
+  - name: "Actionability"
+    weight: 0.3
+  - "Technical depth"
+EOF
+
+  run _parse_merge_config "${TEST_TEMP_DIR}/merge-config.yaml"
+  assert_success
+  # Dimension names extracted
+  assert_output --partial "Approach and strategy"
+  assert_output --partial "Actionability"
+  assert_output --partial "Technical depth"
+  # JSON names array
+  assert_output --partial 'MCFG_DIM_NAMES_JSON='
+  # Weights JSON contains weighted dimensions
+  assert_output --partial '"Approach and strategy": 0.3'
+  assert_output --partial '"Actionability": 0.3'
+}
+
+@test "outputs empty weights when all dimensions are unweighted" {
+  cat >"${TEST_TEMP_DIR}/merge-config.yaml" <<'EOF'
+project_description: "test project"
+dimensions:
+  - "Dim A"
+  - "Dim B"
+EOF
+
+  run _parse_merge_config "${TEST_TEMP_DIR}/merge-config.yaml"
+  assert_success
+  assert_output --partial "MCFG_DIM_WEIGHTS_JSON='{}'"
+}
+
+@test "JSON names array includes all dimensions in order" {
+  cat >"${TEST_TEMP_DIR}/merge-config.yaml" <<'EOF'
+project_description: "test project"
+dimensions:
+  - name: "First"
+    weight: 0.5
+  - "Second"
+  - "Third"
+EOF
+
+  run _parse_merge_config "${TEST_TEMP_DIR}/merge-config.yaml"
+  assert_success
+  assert_output --partial '["First", "Second", "Third"]'
 }
