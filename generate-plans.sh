@@ -56,10 +56,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ─── Parse arguments ──────────────────────────────────────────────────────
-# Supports: --debug, --debug=<variant>, --context=<file>, positional <prompt-file(s)>
+# Supports: --debug, --debug=<variant>, --context=<file>, --auto-lenses, positional <prompt-file(s)>
 DEBUG_MODE="${DEBUG:-}"
 DEBUG_VARIANT=""
 CONTEXT_FILE=""
+AUTO_LENSES="${AUTO_LENSES:-}"
 
 args=()
 for arg in "$@"; do
@@ -74,6 +75,7 @@ for arg in "$@"; do
       echo "Error: --context requires a value (--context=file.md)"
       exit 1
       ;;
+    --auto-lenses) AUTO_LENSES=1 ;;
     *) args+=("${arg}") ;;
   esac
 done
@@ -93,7 +95,7 @@ fi
 
 # ─── Detect mode: single prompt + config variants, or multiple prompt files ──
 if [[ ${#args[@]} -eq 0 ]]; then
-  echo "Usage: $0 [--debug[=variant]] <prompt-file>"
+  echo "Usage: $0 [--debug[=variant]] [--auto-lenses] <prompt-file>"
   echo "       $0 <prompt-1.md> <prompt-2.md> ...  (multi-file mode)"
   exit 1
 fi
@@ -275,18 +277,124 @@ fi
 
 # NOTE: output_instruction is set per-variant inside the loop (needs md_file path)
 
-# ─── Debug mode: filter to single variant (single-file mode only) ────────
-if [[ -n "${DEBUG_MODE}" ]] && ! ${MULTI_FILE_MODE}; then
-  if [[ -z "${VARIANTS[${DEBUG_VARIANT}]+x}" ]]; then
-    echo "Error: unknown variant '${DEBUG_VARIANT}'"
-    echo "Available: ${!VARIANTS[*]}"
+# ─── Auto-lenses: generate task-specific variants via LLM ────────────────
+if [[ -n "${AUTO_LENSES}" ]]; then
+  if ${MULTI_FILE_MODE}; then
+    echo "Error: --auto-lenses is incompatible with multi-file mode"
+    echo "  Multi-file mode already defines its own variants (one per file)."
     exit 1
   fi
-  # Keep only the selected variant
-  selected_guidance="${VARIANTS[${DEBUG_VARIANT}]}"
-  unset VARIANTS
-  declare -A VARIANTS
-  VARIANTS[${DEBUG_VARIANT}]="${selected_guidance}"
+
+  LENS_MODEL="${LENS_MODEL:-haiku}"
+  LENS_COUNT="${LENS_COUNT:-4}"
+  LENS_TIMEOUT="${LENS_TIMEOUT:-120}"
+  export CLAUDE_CODE_MAX_OUTPUT_TOKENS=4000
+
+  echo "── Auto-lenses: generating ${LENS_COUNT} task-specific perspectives (${LENS_MODEL}) ──"
+
+  LENS_PROMPT="Given this planning task, generate exactly ${LENS_COUNT} maximally different
+analytical perspectives to approach it from. Each perspective should force
+genuinely different trade-offs, priorities, and reasoning paths.
+
+For each perspective, output:
+- name: a short kebab-case identifier (e.g., 'risk-first', 'user-centric')
+- guidance: 2-3 sentences of specific guidance for that perspective
+
+Output ONLY valid YAML, no other text:
+perspectives:
+  - name: ...
+    guidance: ...
+
+The task:
+${BASE_PROMPT}"
+
+  lens_raw=$(timeout "${LENS_TIMEOUT}" \
+    claude -p "${LENS_PROMPT}" \
+    --model "${LENS_MODEL}" \
+    --output-format text \
+    --max-turns 3 \
+    --dangerously-skip-permissions \
+    2>/dev/null) || true
+
+  # Parse YAML response into variants
+  # shellcheck disable=SC2312 # eval of python output is intentional
+  lens_parsed=$(echo "${lens_raw}" | python3 -c "
+import sys, yaml, shlex, re, json
+
+text = sys.stdin.read()
+
+# Strip markdown fences if present
+fence = re.search(r'\`\`\`(?:yaml)?\s*\n(.*?)\n\`\`\`', text, re.DOTALL)
+if fence:
+    text = fence.group(1)
+
+try:
+    data = yaml.safe_load(text)
+    perspectives = data.get('perspectives', []) if isinstance(data, dict) else []
+    if not perspectives:
+        print('LENS_FAILED=1')
+        sys.exit(0)
+
+    for p in perspectives:
+        name = str(p.get('name', '')).strip().lower()
+        name = re.sub(r'[^a-z0-9-]', '-', name).strip('-')
+        guidance = str(p.get('guidance', '')).strip()
+        if name and guidance:
+            g = '## Additional guidance\n' + guidance
+            print(f'VARIANTS[{name}]={shlex.quote(g)}')
+
+    # Save for reproducibility
+    print(f'LENS_YAML={shlex.quote(yaml.dump(data, default_flow_style=False))}')
+except Exception:
+    print('LENS_FAILED=1')
+" 2>/dev/null) || lens_parsed="LENS_FAILED=1"
+
+  if echo "${lens_parsed}" | grep -q 'LENS_FAILED=1'; then
+    echo "  ⚠ Auto-lens generation failed — falling back to config variants"
+    # Reset CLAUDE_CODE_MAX_OUTPUT_TOKENS for plan generation
+    export CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
+  else
+    # Replace config variants with auto-generated ones
+    unset VARIANTS
+    declare -A VARIANTS
+    eval "${lens_parsed}"
+
+    # Save generated lenses for reproducibility
+    if [[ -n "${LENS_YAML:-}" ]]; then
+      echo "${LENS_YAML}" >"${RUN_DIR}/auto-lenses.yaml"
+      echo "  ✓ Generated ${#VARIANTS[@]} lenses → ${RUN_DIR}/auto-lenses.yaml"
+    fi
+
+    # Reset CLAUDE_CODE_MAX_OUTPUT_TOKENS for plan generation
+    export CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
+  fi
+
+  echo ""
+fi
+
+# ─── Debug mode: filter to single variant (single-file mode only) ────────
+if [[ -n "${DEBUG_MODE}" ]] && ! ${MULTI_FILE_MODE}; then
+  if [[ -n "${AUTO_LENSES}" ]]; then
+    # Auto-lenses + debug: keep only the first generated variant
+    first_variant="${!VARIANTS[*]}"
+    first_variant="${first_variant%% *}"
+    DEBUG_VARIANT="${first_variant}"
+    selected_guidance="${VARIANTS[${first_variant}]}"
+    unset VARIANTS
+    declare -A VARIANTS
+    VARIANTS[${first_variant}]="${selected_guidance}"
+  else
+    if [[ -z "${VARIANTS[${DEBUG_VARIANT}]+x}" ]]; then
+      echo "Error: unknown variant '${DEBUG_VARIANT}'"
+      echo "Available: ${!VARIANTS[*]}"
+      exit 1
+    fi
+    # Keep only the selected variant
+    selected_guidance="${VARIANTS[${DEBUG_VARIANT}]}"
+    unset VARIANTS
+    declare -A VARIANTS
+    VARIANTS[${DEBUG_VARIANT}]="${selected_guidance}"
+  fi
 fi
 
 # ─── Launch sessions ──────────────────────────────────────────────────────
