@@ -10,10 +10,8 @@ set -euo pipefail
 #   ./monitor-sessions.sh --watch 5    # refresh every 5s
 # ─────────────────────────────────────────────────────────────────────────────
 
-SNAPSHOT="/tmp/claude-monitor-sizes.json"
-
 render() {
-python3 << 'PYEOF'
+  python3 <<'PYEOF'
 import json, os, subprocess, re, time, glob, sys, datetime
 
 HOME = os.path.expanduser("~")
@@ -524,24 +522,26 @@ PYEOF
 
 # ─── Entry point ───────────────────────────────────────────────────────────
 
-if [ "${1:-}" = "--watch" ]; then
-    interval="${2:-15}"
-    saw_sessions=false
-    while true; do
-        clear
-        echo -e "\033[1mClaude Code Session Monitor\033[0m (refresh ${interval}s, Ctrl+C to stop)"
-        rc=0; render || rc=$?
-        if [ "$rc" -eq 0 ]; then
-            saw_sessions=true
-        elif [ "$rc" -eq 2 ] && $saw_sessions; then
-            # Had sessions before, now none — all done
-            echo ""
-            echo -e "\033[1mAll sessions finished. Exiting monitor.\033[0m"
-            sleep 2
-            break
-        fi
-        sleep "$interval"
-    done
+if [[ "${1:-}" = "--watch" ]]; then
+  interval="${2:-15}"
+  saw_sessions=false
+  while true; do
+    clear
+    echo -e "\033[1mClaude Code Session Monitor\033[0m (refresh ${interval}s, Ctrl+C to stop)"
+    rc=0
+    # shellcheck disable=SC2310 # intentional — capture exit code
+    render || rc=$?
+    if [[ "${rc}" -eq 0 ]]; then
+      saw_sessions=true
+    elif [[ "${rc}" -eq 2 ]] && ${saw_sessions}; then
+      # Had sessions before, now none — all done
+      echo ""
+      echo -e "\033[1mAll sessions finished. Exiting monitor.\033[0m"
+      sleep 2
+      break
+    fi
+    sleep "${interval}"
+  done
 else
-    render
+  render
 fi
