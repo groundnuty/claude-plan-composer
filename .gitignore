@@ -15,8 +15,10 @@ demo/*.cast
 # Private paper planning notes (not for public repo)
 private/
 
-# Claude Code local settings
-.claude/
+# Claude Code local settings (allow hooks and settings.json)
+.claude/*
+!.claude/hooks/
+!.claude/settings.json
 
 # Temporary files
 /tmp/
