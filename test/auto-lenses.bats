@@ -60,6 +60,7 @@ try:
     for p in perspectives:
         name = str(p.get('name', '')).strip().lower()
         name = re.sub(r'[^a-z0-9-]', '-', name).strip('-')
+        name = re.sub(r'-+', '-', name)
         guidance = str(p.get('guidance', '')).strip()
         if name and guidance:
             g = f'## Additional guidance{nl}{guidance}'
@@ -111,8 +112,8 @@ perspectives:
 
   result=$(echo "${yaml_input}" | _parse_lenses)
 
-  # 'Risk First!' → 'risk-first' (special chars → -, trailing - stripped)
+  # 'Risk First!' → 'risk-first' (special chars → -, consecutive dashes collapsed, trailing - stripped)
   [[ "${result}" == *"VARIANTS[risk-first]="* ]]
-  # 'User Centric (v2)' → 'user-centric--v2-' → stripped to 'user-centric--v2'
-  [[ "${result}" == *"VARIANTS[user-centric--v2-]="* ]] || [[ "${result}" == *"VARIANTS[user-centric--v2]="* ]]
+  # 'User Centric (v2)' → 'user-centric-v2' (spaces and parens → -, collapsed)
+  [[ "${result}" == *"VARIANTS[user-centric-v2]="* ]]
 }

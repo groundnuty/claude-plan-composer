@@ -335,13 +335,26 @@ try:
         print('LENS_FAILED=1')
         sys.exit(0)
 
+    seen = set()
+    count = 0
     for p in perspectives:
         name = str(p.get('name', '')).strip().lower()
         name = re.sub(r'[^a-z0-9-]', '-', name).strip('-')
+        name = re.sub(r'-+', '-', name)  # collapse consecutive dashes
         guidance = str(p.get('guidance', '')).strip()
-        if name and guidance:
-            g = '## Additional guidance\n' + guidance
-            print(f'VARIANTS[{name}]={shlex.quote(g)}')
+        if not name or not guidance:
+            continue
+        if name in seen:
+            print(f'# Warning: duplicate lens name \"{name}\" skipped', file=sys.stderr)
+            continue
+        seen.add(name)
+        g = '## Additional guidance\n' + guidance
+        print(f'VARIANTS[{name}]={shlex.quote(g)}')
+        count += 1
+
+    if count == 0:
+        print('LENS_FAILED=1')
+        sys.exit(0)
 
     # Save for reproducibility
     print(f'LENS_YAML={shlex.quote(yaml.dump(data, default_flow_style=False))}')
@@ -359,10 +372,35 @@ except Exception:
     declare -A VARIANTS
     eval "${lens_parsed}"
 
-    # Save generated lenses for reproducibility
-    if [[ -n "${LENS_YAML:-}" ]]; then
-      echo "${LENS_YAML}" >"${RUN_DIR}/auto-lenses.yaml"
-      echo "  ✓ Generated ${#VARIANTS[@]} lenses → ${RUN_DIR}/auto-lenses.yaml"
+    # Verify at least one variant was produced
+    if [[ ${#VARIANTS[@]} -eq 0 ]]; then
+      echo "  ⚠ Auto-lens parsing produced 0 valid variants — falling back to config variants"
+      # Re-load config variants (they were unset above)
+      unset VARIANTS
+      declare -A VARIANTS
+      if [[ -n "${CONFIG_FILE}" ]]; then
+        # shellcheck disable=SC2312 # eval of python output is intentional
+        eval "$(python3 -c "
+import yaml, shlex
+with open('${CONFIG_FILE}') as f:
+    cfg = yaml.safe_load(f)
+variants = cfg.get('variants') or {'baseline': ''}
+for name, val in variants.items():
+    if isinstance(val, dict):
+        guidance = str(val.get('guidance') or '').strip()
+    else:
+        guidance = str(val).strip() if val else ''
+    print(f'VARIANTS[{name}]={shlex.quote(guidance)}')
+")"
+      else
+        VARIANTS[baseline]=""
+      fi
+    else
+      # Save generated lenses for reproducibility
+      if [[ -n "${LENS_YAML:-}" ]]; then
+        echo "${LENS_YAML}" >"${RUN_DIR}/auto-lenses.yaml"
+        echo "  ✓ Generated ${#VARIANTS[@]} lenses → ${RUN_DIR}/auto-lenses.yaml"
+      fi
     fi
 
     # Reset CLAUDE_CODE_MAX_OUTPUT_TOKENS for plan generation
