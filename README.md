@@ -106,7 +106,8 @@ Five bash scripts, a test suite, and a research directory:
 | `merge-plans.sh` | Merges generated plans. Agent Teams debate (default) or headless merge. Supports holistic or pairwise tournament comparison. |
 | `verify-plan.sh` | Post-merge quality gates: consistency, completeness, actionability. Optional `--pre-mortem` failure analysis. |
 | `monitor-sessions.sh` | Real-time dashboard for running sessions — tracks PIDs, token usage, context window, subagents, tool calls, and last action. |
-| `test/` | 44 bats tests across 5 files covering config parsing, flag handling, convergence, and quality gates. |
+| `examples/` | Example prompts. `csv-to-json-cli.md` is a technical example also used by the e2e test. |
+| `test/` | 44 unit tests (bats) + e2e pipeline test. Unit tests are fast and free; e2e calls the Claude API. |
 | `research/` | Analysis documents that informed the design decisions (optimal N, methodology improvements with 50+ references). |
 | `AGENTS.md` | Detailed usage reference for working with this project in Claude Code. |
 
@@ -134,6 +135,17 @@ Full pipeline with all variants (Opus, default 4, ~15-25 min, ~$20-60):
 ```
 
 See [AGENTS.md](AGENTS.md) for all options, environment variables, and output structure.
+
+### Running e2e tests
+
+The e2e test runs the full pipeline (generate → evaluate → merge) with real Claude API calls using the `examples/csv-to-json-cli.md` prompt:
+
+```bash
+make test-e2e                 # ~$2-4, ~5 min, requires Claude CLI with API access
+MODEL=haiku make test-e2e     # cheaper (~$1) but less reliable
+```
+
+This is separate from `make check` (which runs fast unit tests, no API calls).
 
 ## Adapting to your own project
 

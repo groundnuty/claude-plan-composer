@@ -53,6 +53,15 @@ test: ## Run all bats tests
 		echo "  (no test files found — skipping)"; \
 	fi
 
+.PHONY: test-e2e
+test-e2e: ## E2E pipeline test (requires Claude API, ~5 min)
+	@echo "── E2E tests (real Claude API calls) ──"
+	@if ! command -v claude >/dev/null 2>&1; then \
+		echo "  ⚠ claude CLI not found — skipping e2e"; \
+		exit 0; \
+	fi
+	devbox run -- bats test/e2e/
+
 .PHONY: clean
 clean: ## Remove generated artifacts
 	@echo "── Clean ──"
@@ -61,5 +70,5 @@ clean: ## Remove generated artifacts
 
 .PHONY: help
 help: ## List all targets
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'

@@ -1,0 +1,17 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# E2E test configuration — minimal cost.
+#
+# 2 variants with haiku model, fast timeouts.
+# Total cost: ~$0.50-1.00 per run.
+# Used by: make e2e / bats test/e2e/
+# ─────────────────────────────────────────────────────────────────────────────
+
+work_dir: ""
+
+variants:
+  baseline: ""
+
+  simplicity: |
+    ## Additional guidance
+    Prioritize simplicity — find the smallest possible scope that still
+    addresses the core problem. Minimize moving parts.

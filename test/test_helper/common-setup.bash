@@ -4,12 +4,17 @@
 # Source this from setup() in each test file.
 
 _common_setup() {
-  load 'test_helper/bats-support/load'
-  load 'test_helper/bats-assert/load'
-  load 'test_helper/bats-file/load'
+  # Resolve paths from this file's location, not the test file's directory.
+  # This allows tests in subdirectories (e.g., test/e2e/) to reuse this setup.
+  local helper_dir
+  helper_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-  # Project root (one level up from test/)
-  PROJECT_ROOT="$(cd "${BATS_TEST_DIRNAME}/.." && pwd)"
+  load "${helper_dir}/bats-support/load"
+  load "${helper_dir}/bats-assert/load"
+  load "${helper_dir}/bats-file/load"
+
+  # Project root (two levels up from test_helper/)
+  PROJECT_ROOT="$(cd "${helper_dir}/../.." && pwd)"
   export PROJECT_ROOT
 
   # Create a temp dir for each test

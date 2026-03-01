@@ -267,7 +267,8 @@ The project uses [devbox](https://www.jetpack.io/devbox) for reproducible toolin
 ```bash
 make check     # Full verification: syntax + shellcheck + shfmt + bats tests
 make fix       # Auto-fix: format in-place, then lint
-make test      # Run bats tests only
+make test      # Run bats tests only (fast, no API calls)
+make test-e2e  # E2E pipeline test (requires Claude API, ~$1, ~5 min)
 make lint      # ShellCheck only
 make fmt       # shfmt format in-place
 make fmt-check # shfmt check without modifying
