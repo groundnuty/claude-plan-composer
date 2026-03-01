@@ -72,7 +72,8 @@ variants:
 #
 # PERSONA-BASED (who is thinking):
 # Different personas attend to different aspects of the same problem.
-# Research: diverse personas improve accuracy by ~10% (Doshi et al., 2024).
+# Research: diverse personas improved accuracy from 82% to 91% on reasoning
+# benchmarks (Hegazy, 2024, arXiv:2410.12853).
 #
 #   architect:
 #     guidance: "You are a senior systems architect. Prioritize scalability,
