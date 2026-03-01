@@ -64,3 +64,65 @@ variants:
     Take a wide view. Consider alternative approaches, trade-offs, risks,
     and second-order effects. Map the full landscape before recommending
     a path.
+
+# ─── Alternative lens strategies ──────────────────────────────────────────
+# The default analytical lenses (baseline/simplicity/depth/breadth) are
+# domain-agnostic. For better results, consider domain-specific alternatives.
+# Uncomment and adapt a strategy below, or mix elements from several.
+#
+# PERSONA-BASED (who is thinking):
+# Different personas attend to different aspects of the same problem.
+# Research: diverse personas improve accuracy by ~10% (Doshi et al., 2024).
+#
+#   architect:
+#     guidance: "You are a senior systems architect. Prioritize scalability,
+#       separation of concerns, and long-term maintainability."
+#   pragmatist:
+#     guidance: "You are a staff engineer who ships. Shortest path to
+#       production. Cut scope aggressively. No speculative abstractions."
+#   skeptic:
+#     guidance: "You are a security-minded tech lead. Question every
+#       assumption. What fails first? What's the blast radius?"
+#   visionary:
+#     guidance: "You are a research engineer. Explore unconventional
+#       approaches the team wouldn't normally consider."
+#
+# CONSTRAINT-BASED (different operating conditions):
+# Force plans into genuinely different solution spaces by varying constraints.
+#
+#   fast-and-cheap:
+#     guidance: "Assume a 2-week deadline and $5K budget."
+#   unlimited-time:
+#     guidance: "Assume unlimited time but a team of 1."
+#   scale-first:
+#     guidance: "Assume this needs to serve 10x current load within 6 months."
+#   legacy-compat:
+#     guidance: "Assume zero breaking changes to existing interfaces."
+#
+# ADVERSARIAL (contrarian perspective):
+# Counteracts Degeneration-of-Thought — same-model runs converging on the
+# same answer. One contrarian variant can surface alternatives others miss.
+#
+#   contrarian:
+#     guidance: |
+#       Identify the most obvious approach to this task, then propose a
+#       fundamentally different alternative. Your plan MUST differ
+#       structurally from what a conventional approach would look like.
+#
+# COST-OPTIMIZED (model cascade):
+# Use cheaper models for generation, reserve Opus for merge where quality
+# matters most. ~48% cost savings vs. all-Opus. Research: Self-MoA (Li et
+# al., 2025) shows quality of the aggregator matters more than proposers.
+#
+#   architect:
+#     model: sonnet
+#     guidance: "You are a senior systems architect..."
+#   pragmatist:
+#     model: sonnet
+#     guidance: "You are a staff engineer who ships..."
+#   skeptic:
+#     model: sonnet
+#     guidance: "You are a security-minded tech lead..."
+#   visionary:
+#     model: opus
+#     guidance: "You are a research engineer..."

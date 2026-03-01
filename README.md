@@ -122,6 +122,15 @@ The scripts are domain-agnostic — all domain-specific content lives in your pr
 
 **Merge dimensions**: Customize comparison dimensions in `merge-config.yaml` to match your domain.
 
+**Lens strategies**: The default variants (baseline/simplicity/depth/breadth) are analytical lenses — they vary *how* the model thinks. For domain-specific work, consider alternatives:
+
+- **Persona lenses** — shift *who* is thinking: architect, pragmatist, skeptic, visionary. Different personas attend to different aspects of the same problem (~10% accuracy improvement per [Doshi et al., 2024](https://doi.org/10.1002/smj.3677)).
+- **Constraint lenses** — force different solution spaces: "2-week deadline," "team of 1," "10x scale," "zero breaking changes." Same problem, genuinely different trade-offs.
+- **Adversarial lens** — one contrarian variant that must differ structurally from the obvious approach. Counteracts Degeneration-of-Thought, where same-model runs converge.
+- **Model cascade** — use Sonnet for generation, Opus for merge. The merge aggregator's quality matters more than individual proposers ([Self-MoA, Li et al., 2025](https://arxiv.org/abs/2502.00674)). ~48% cost savings vs. all-Opus.
+
+See `config.yaml` for commented examples of each strategy, or mix elements across strategies.
+
 The key requirement is that your prompt file gives Claude enough context to produce a substantive plan — point it at files to read, decisions to make, and trade-offs to consider. See [AGENTS.md](AGENTS.md) for the full configuration reference.
 
 ## Limitations
