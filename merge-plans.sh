@@ -81,16 +81,19 @@ fi
 
 # Parse merge config with defaults for every field.
 # Variables set by eval: MCFG_PROJECT, MCFG_ROLE, MCFG_ADVOCATE,
-# MCFG_GOAL, MCFG_TITLE, MCFG_DIMENSIONS, MCFG_CONSTITUTION, CFG_WORK_DIR, CFG_MCP_CONFIG
+# MCFG_GOAL, MCFG_TITLE, MCFG_DIMENSIONS, MCFG_CONSTITUTION,
+# MCFG_COMPARISON, MCFG_DIM_NAMES_JSON, MCFG_DIM_WEIGHTS_JSON,
+# CFG_WORK_DIR, CFG_MCP_CONFIG
 # shellcheck disable=SC2312 # eval of python output is intentional
 eval "$(python3 -c "
-import yaml, shlex, sys
+import yaml, shlex, json, sys
 
 defaults = {
     'work_dir': '',
     'mcp_config': '',
     'project_description': 'the project',
     'role': 'an expert analyst',
+    'comparison_method': 'holistic',
     'dimensions': [
         'Approach and strategy',
         'Scope and priorities',
@@ -129,10 +132,59 @@ print(f'MCFG_ADVOCATE={shlex.quote(str(cfg[\"advocate_instructions\"]).strip())}
 print(f'MCFG_GOAL={shlex.quote(str(cfg[\"output_goal\"]).strip())}')
 print(f'MCFG_TITLE={shlex.quote(str(cfg[\"output_title\"]))}')
 
-# Dimensions as a formatted list
-dims = cfg.get('dimensions', defaults['dimensions'])
-dim_list = chr(10).join(f'   - {d}' for d in dims)
+# Comparison method — validate value
+cm = str(cfg.get('comparison_method', 'holistic')).strip()
+if cm not in ('holistic', 'pairwise'):
+    print(f'echo \"Warning: unknown comparison_method {shlex.quote(cm)}, falling back to holistic\"',
+          file=sys.stderr)
+    cm = 'holistic'
+print(f'MCFG_COMPARISON={shlex.quote(cm)}')
+
+# Dimensions — support both string and dict forms
+# String: 'Approach and strategy' (equal weight)
+# Dict: {name: 'Approach and strategy', weight: 0.25}
+raw_dims = cfg.get('dimensions', defaults['dimensions'])
+dim_names = []
+dim_weights = {}
+for d in raw_dims:
+    if isinstance(d, dict):
+        name = str(d.get('name', ''))
+        if not name:
+            print('Warning: dimension dict missing \"name\" key, skipping',
+                  file=sys.stderr)
+            continue
+        dim_names.append(name)
+        weight = d.get('weight')
+        if weight is not None:
+            try:
+                w = float(weight)
+            except (ValueError, TypeError):
+                print(f'Warning: non-numeric weight for \"{name}\": {weight!r}, ignoring',
+                      file=sys.stderr)
+                continue
+            if w < 0:
+                print(f'Warning: negative weight for \"{name}\": {w}, ignoring',
+                      file=sys.stderr)
+                continue
+            dim_weights[name] = w
+    else:
+        dim_names.append(str(d))
+
+if dim_weights:
+    total_w = sum(dim_weights.values())
+    if total_w > 1.0:
+        print(f'Warning: explicit weights sum to {total_w:.2f} (> 1.0)',
+              file=sys.stderr)
+
+dim_list = chr(10).join(f'   - {n}' for n in dim_names)
 print(f'MCFG_DIMENSIONS={shlex.quote(dim_list)}')
+
+# JSON arrays for pairwise tournament
+print(f'MCFG_DIM_NAMES_JSON={shlex.quote(json.dumps(dim_names))}')
+if dim_weights:
+    print(f'MCFG_DIM_WEIGHTS_JSON={shlex.quote(json.dumps(dim_weights))}')
+else:
+    print(\"MCFG_DIM_WEIGHTS_JSON='{}'\")
 
 # Constitution as a formatted list
 const = cfg.get('constitution', defaults['constitution'])
@@ -268,12 +320,106 @@ PROMPT_FOOTER_EOF
 
 elif [[ "${MERGE_MODE}" = "simple" ]]; then
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "Simple merge (headless) with ${MODEL}..."
+  echo "Simple merge (headless, ${MCFG_COMPARISON}) with ${MODEL}..."
   echo "  Output: ${merge_md}"
   echo ""
 
-  # Build prompt with all plans inline
-  MERGE_PROMPT="You are ${MCFG_ROLE}. Below are ${#plans[@]} plans
+  # Collect variant names for pairwise pair enumeration
+  variant_names=()
+  for plan_file in "${plans[@]}"; do
+    variant_names+=("$(basename "${plan_file}" .md | sed 's/plan-//')")
+  done
+
+  # Build weight instructions if weights are provided
+  WEIGHT_INSTRUCTIONS=""
+  if [[ "${MCFG_DIM_WEIGHTS_JSON}" != "{}" ]]; then
+    WEIGHT_INSTRUCTIONS="
+Dimension weights (use these to weight scoring and emphasis in synthesis):
+${MCFG_DIM_WEIGHTS_JSON}
+Unweighted dimensions share the remaining weight equally."
+  fi
+
+  # Build prompt based on comparison method
+  if [[ "${MCFG_COMPARISON}" = "pairwise" ]]; then
+    # ── Pairwise tournament prompt ──────────────────────────────────
+    # Enumerate all C(N,2) pairs
+    pairs_list=""
+    for ((i = 0; i < ${#variant_names[@]}; i++)); do
+      for ((j = i + 1; j < ${#variant_names[@]}; j++)); do
+        pairs_list+="   - ${variant_names[${i}]} vs ${variant_names[${j}]}
+"
+      done
+    done
+
+    # Weight-aware scoring instructions
+    if [[ "${MCFG_DIM_WEIGHTS_JSON}" != "{}" ]]; then
+      SCORING_INSTRUCTIONS="Apply dimension weights to compute weighted scores:
+${MCFG_DIM_WEIGHTS_JSON}
+A win in a weighted dimension earns its weight as score.
+Unweighted dimensions share the remaining weight equally."
+    else
+      SCORING_INSTRUCTIONS="Each dimension win counts as 1 point."
+    fi
+
+    MERGE_PROMPT="You are ${MCFG_ROLE}. Below are ${#plans[@]} plans
+for ${MCFG_PROJECT}, each generated with different focus areas.
+
+Your task has four phases:
+
+## Phase 1 — PAIRWISE COMPARISONS
+
+For each dimension listed below, compare every pair of plans head-to-head.
+For each pair × dimension, pick a WINNER and give a one-sentence justification.
+
+Dimensions:
+${MCFG_DIMENSIONS}
+${WEIGHT_INSTRUCTIONS}
+
+Pairs to compare:
+${pairs_list}
+Output Phase 1 as a structured table:
+| Dimension | Pair | Winner | Justification |
+|-----------|------|--------|---------------|
+
+## Phase 2 — TOURNAMENT TALLY
+
+Count the wins per plan per dimension from Phase 1.
+${SCORING_INSTRUCTIONS}
+
+Produce a final ranking table:
+| Plan | Total Score | Wins by Dimension |
+|------|-------------|-------------------|
+
+## Phase 3 — SYNTHESIS
+
+Using the tournament results, produce a MERGED PLAN:
+- Use the dimension winner's approach for each dimension
+- For dimensions with a clear winner, adopt their approach
+- For dimensions where results are close (1-point margin), classify the
+  disagreement:
+  - GENUINE TRADE-OFF: Present both options with trade-off analysis
+  - COMPLEMENTARY: Merge both contributions
+  - ARBITRARY DIVERGENCE: Pick the more specific/actionable version
+- ${MCFG_GOAL}
+
+After synthesizing, scan each source plan for insights that appear in ONLY
+that plan. For each unique insight:
+- If genuinely valuable, include it with a note: \"[Source: variant-name]\"
+- If not valuable, briefly note why it was excluded in the comparison section
+
+## Phase 4 — CONSTITUTIONAL REVIEW
+
+Verify the merged plan against these quality principles:
+${MCFG_CONSTITUTION}
+
+For each principle: does the merged plan satisfy it? If not, revise the
+relevant section before finalizing.
+
+"
+
+  else
+    # ── Holistic comparison prompt (default) ────────────────────────
+    MERGE_PROMPT="You are ${MCFG_ROLE}. Below are ${#plans[@]} plans
 for ${MCFG_PROJECT}, each generated with different focus areas.
 
 Your task has three phases:
@@ -282,6 +428,7 @@ Your task has three phases:
 For each of the following dimensions, produce a comparison table showing
 each plan's approach, strengths, and weaknesses:
 ${MCFG_DIMENSIONS}
+${WEIGHT_INSTRUCTIONS}
 
 For each dimension, classify any disagreements between plans:
 - GENUINE TRADE-OFF: Legitimate alternatives with different strengths.
@@ -312,6 +459,7 @@ For each principle: does the merged plan satisfy it? If not, revise the
 relevant section before finalizing.
 
 "
+  fi
 
   for plan_file in "${plans[@]}"; do
     variant_name=$(basename "${plan_file}" .md | sed 's/plan-//')

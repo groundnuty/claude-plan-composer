@@ -21,8 +21,16 @@ project_description: "the project"
 # Role the merge LLM assumes (simple mode only).
 role: "an expert analyst"
 
+# How to compare plans across dimensions.
+# holistic (default): LLM evaluates all plans per dimension simultaneously
+# pairwise: Compare plans 2 at a time, then tally results (more reliable for
+#   4+ plans, avoids position bias, but slower). Simple mode only.
+comparison_method: holistic
+
 # Dimensions to compare across plans.
 # Each dimension becomes a row in the comparison table and a debate topic.
+# Simple form: string (equal weight). Extended form: {name, weight}.
+# Weights are used in pairwise tournament scoring and synthesis instructions.
 dimensions:
   - Approach and strategy
   - Scope and priorities
@@ -30,6 +38,12 @@ dimensions:
   - Architecture and structure
   - Risk assessment and trade-offs
   - Actionability and next steps
+# Weighted example:
+#   - name: "Approach and strategy"
+#     weight: 0.3
+#   - name: "Actionability and next steps"
+#     weight: 0.3
+#   - "Technical depth"   # weight defaults to equal share of remainder
 
 # Instructions for each advocate agent (agent-teams mode).
 # Describes how advocates should argue for their plan.
