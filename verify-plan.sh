@@ -64,6 +64,8 @@ for f in "${RUN_DIR}"/plan-*.md; do
   size=$(wc -c <"${f}" | tr -d ' ')
   if [[ "${size}" -gt 1000 ]]; then
     plans+=("${f}")
+  else
+    echo "  Skipping $(basename "${f}") — too small (${size} bytes)"
   fi
 done
 
@@ -179,13 +181,14 @@ if [[ -n "${verify_raw}" ]]; then
       *) gate_name="UNKNOWN" ;;
     esac
 
-    if echo "${verify_raw}" | grep -qi "Gate ${gate_num}.*FAIL"; then
+    if echo "${verify_raw}" | grep -qi "Gate ${gate_num}.*Result:.*FAIL"; then
       echo "  ✗ Gate ${gate_num} (${gate_name}): FAIL"
       ((gate_failures++)) || true
-    elif echo "${verify_raw}" | grep -qi "Gate ${gate_num}.*PASS"; then
+    elif echo "${verify_raw}" | grep -qi "Gate ${gate_num}.*Result:.*PASS"; then
       echo "  ✓ Gate ${gate_num} (${gate_name}): PASS"
     else
-      echo "  ? Gate ${gate_num} (${gate_name}): unclear"
+      echo "  ? Gate ${gate_num} (${gate_name}): unclear (treating as failure)"
+      ((gate_failures++)) || true
     fi
   done
 
