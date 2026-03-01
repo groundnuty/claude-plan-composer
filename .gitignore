@@ -12,6 +12,9 @@ merge-config.local.yaml
 demo/*.cast
 # demo/demo.gif is committed (used in README)
 
+# Private paper planning notes (not for public repo)
+private/
+
 # Claude Code local settings
 .claude/
 
