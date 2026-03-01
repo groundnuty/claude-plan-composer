@@ -56,11 +56,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ─── Parse arguments ──────────────────────────────────────────────────────
-# Supports: --debug, --debug=<variant>, --context=<file>, --auto-lenses, positional <prompt-file(s)>
+# Supports: --debug, --debug=<variant>, --context=<file>, --auto-lenses,
+#           --sequential-diversity, positional <prompt-file(s)>
 DEBUG_MODE="${DEBUG:-}"
 DEBUG_VARIANT=""
 CONTEXT_FILE=""
 AUTO_LENSES="${AUTO_LENSES:-}"
+SEQUENTIAL_DIVERSITY="${SEQUENTIAL_DIVERSITY:-}"
 
 args=()
 for arg in "$@"; do
@@ -76,6 +78,7 @@ for arg in "$@"; do
       exit 1
       ;;
     --auto-lenses) AUTO_LENSES=1 ;;
+    --sequential-diversity) SEQUENTIAL_DIVERSITY=1 ;;
     *) args+=("${arg}") ;;
   esac
 done
@@ -95,7 +98,7 @@ fi
 
 # ─── Detect mode: single prompt + config variants, or multiple prompt files ──
 if [[ ${#args[@]} -eq 0 ]]; then
-  echo "Usage: $0 [--debug[=variant]] [--auto-lenses] <prompt-file>"
+  echo "Usage: $0 [--debug[=variant]] [--auto-lenses] [--sequential-diversity] <prompt-file>"
   echo "       $0 <prompt-1.md> <prompt-2.md> ...  (multi-file mode)"
   exit 1
 fi
@@ -277,6 +280,19 @@ fi
 
 # NOTE: output_instruction is set per-variant inside the loop (needs md_file path)
 
+# ─── Validate sequential-diversity ────────────────────────────────────────
+if [[ -n "${SEQUENTIAL_DIVERSITY}" ]]; then
+  if ${MULTI_FILE_MODE}; then
+    echo "Error: --sequential-diversity is incompatible with multi-file mode"
+    echo "  Multi-file mode defines its own variant prompts."
+    exit 1
+  fi
+  if [[ -n "${DEBUG_MODE}" ]]; then
+    echo "Warning: --sequential-diversity has no effect in debug mode (single variant)"
+    SEQUENTIAL_DIVERSITY=""
+  fi
+fi
+
 # ─── Auto-lenses: generate task-specific variants via LLM ────────────────
 if [[ -n "${AUTO_LENSES}" ]]; then
   if ${MULTI_FILE_MODE}; then
@@ -435,48 +451,13 @@ if [[ -n "${DEBUG_MODE}" ]] && ! ${MULTI_FILE_MODE}; then
   fi
 fi
 
-# ─── Launch sessions ──────────────────────────────────────────────────────
+# ─── Launch helpers ───────────────────────────────────────────────────────
 
-declare -A PIDS
-STARTED_AT=$(date +%s)
-
-MODE_LABEL=""
-if [[ -n "${DEBUG_MODE}" ]]; then
-  MODE_LABEL=" (DEBUG: ${DEBUG_VARIANT} only)"
-fi
-
-echo "╔══════════════════════════════════════════════════════════════╗"
-echo "║  Generating ${#VARIANTS[@]} plan variant(s)${MODE_LABEL}"
-echo "║  Model: ${MODEL} | Max turns: ${MAX_TURNS} | Timeout: ${TIMEOUT_SECS}s"
-echo "║  Output: ${RUN_DIR}/"
-echo "║  Session CWD: ${WORK_DIR}"
-echo "╚══════════════════════════════════════════════════════════════╝"
-echo ""
-
-for variant in "${!VARIANTS[@]}"; do
-  md_file="${RUN_DIR}/plan-${variant}.md"
-  logfile="${RUN_DIR}/plan-${variant}.log"
-
-  echo "  → Launching: ${variant}"
-  echo "    Plan: ${md_file}"
-
-  # OUTPUT FIX: Tell Claude to write the plan to a file using the Write tool.
-  #
-  # Why not --output-format text?
-  #   `--output-format text` returns only the LAST assistant message (the
-  #   `result` field of SDKResultMessage). When Claude researches across
-  #   multiple turns, the actual plan content is in intermediate messages
-  #   and only a summary like "The complete plan has been delivered above"
-  #   gets captured. This is confirmed by GitHub issues #2904 and #3359.
-  #
-  # Why not --output-format stream-json?
-  #   Would capture everything but also includes research notes, tool call
-  #   context, and internal reasoning — noisy and hard to extract cleanly.
-  #
-  # Write tool approach:
-  #   Claude writes the plan directly to the file. Simple, reliable, and
-  #   the plan file contains exactly the plan — nothing else.
-  output_instruction="
+# _build_output_instruction <md_file>
+# Produces the Write-tool output instruction appended to every prompt.
+_build_output_instruction() {
+  local md_file="$1"
+  cat <<OUTINST
 
 ## Output format (CRITICAL)
 Write the COMPLETE plan to this exact file path using the Write tool:
@@ -492,42 +473,59 @@ Rules:
    across multiple Write calls
 5. Do NOT write to .claude/plans/ or any other path — ONLY the path above
 6. After writing the file, output a brief confirmation (e.g., 'Plan written
-   to ${md_file}')"
+   to ${md_file}')
+OUTINST
+}
 
-  # Build the full prompt:
-  #   Multi-file:  file content + shared context + output instruction
-  #   Single-file: base prompt + variant guidance + shared context + output instruction
-  variant_value="${VARIANTS[${variant}]}"
-  if [[ "${variant_value}" == __FILE__:* ]]; then
-    prompt_file="${variant_value#__FILE__:}"
-    full_prompt="$(cat "${prompt_file}")${SHARED_CONTEXT}${output_instruction}"
-  else
-    full_prompt="${BASE_PROMPT}${variant_value}${SHARED_CONTEXT}${output_instruction}"
-  fi
-
-  # Per-variant model override (falls back to global $MODEL)
-  variant_model="${VARIANT_MODELS[${variant}]:-${MODEL}}"
-
-  # Build extra flags: --add-dir, --mcp-config
-  extra_flags=()
+# _build_extra_flags
+# Outputs --add-dir and --mcp-config flags for claude invocations.
+_build_extra_flags() {
   for dir in "${ADD_DIRS[@]}"; do
     if [[ -d "${dir}" ]]; then
-      extra_flags+=(--add-dir "${dir}")
+      echo "--add-dir"
+      echo "${dir}"
     fi
   done
   if [[ -n "${MCP_CONFIG}" ]]; then
-    extra_flags+=(--mcp-config "${MCP_CONFIG}")
+    echo "--mcp-config"
+    echo "${MCP_CONFIG}"
+  fi
+}
+
+# _launch_variant <variant> <extra_prompt_context>
+# Launches a single variant session in the background. Sets PIDS[$variant].
+_launch_variant() {
+  local variant="$1"
+  local extra_context="${2:-}"
+  local md_file="${RUN_DIR}/plan-${variant}.md"
+  local logfile="${RUN_DIR}/plan-${variant}.log"
+
+  echo "  → Launching: ${variant}"
+  echo "    Plan: ${md_file}"
+
+  local output_instruction
+  output_instruction=$(_build_output_instruction "${md_file}")
+
+  # Build the full prompt
+  local variant_value="${VARIANTS[${variant}]}"
+  local full_prompt
+  if [[ "${variant_value}" == __FILE__:* ]]; then
+    local prompt_file="${variant_value#__FILE__:}"
+    full_prompt="$(cat "${prompt_file}")${SHARED_CONTEXT}${extra_context}${output_instruction}"
+  else
+    full_prompt="${BASE_PROMPT}${variant_value}${SHARED_CONTEXT}${extra_context}${output_instruction}"
   fi
 
+  # Per-variant model override (falls back to global $MODEL)
+  local variant_model="${VARIANT_MODELS[${variant}]:-${MODEL}}"
+
+  # Build extra flags
+  local -a extra_flags
+  # shellcheck disable=SC2312 # _build_extra_flags only echoes strings; can't fail meaningfully
+  mapfile -t extra_flags < <(_build_extra_flags)
+
   # Run from WORK_DIR so all repos within it are accessible to Claude.
-  # If WORK_DIR is a temp dir, Claude has no project files to read.
-  # Claude writes the plan to $md_file via the Write tool.
-  # stdout + stderr go to logfile for debugging.
-  #
   # --dangerously-skip-permissions: Required for headless -p mode.
-  #   Without it, Write and WebSearch are denied ("you haven't granted
-  #   permissions yet") because there's no interactive user to approve.
-  #   Safe here: sessions only read source files + write one plan file.
   (cd "${WORK_DIR}" \
     && CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000 \
       timeout "${TIMEOUT_SECS}" \
@@ -540,61 +538,166 @@ Rules:
       >"${logfile}" 2>&1) &
 
   PIDS[${variant}]=$!
+}
 
-  # Stagger launches to reduce rate limit pressure.
-  # All sessions share the same org-level RPM/TPM limits.
-  sleep "${STAGGER_SECS}"
-done
+# _wait_for_variants <variant1> [variant2 ...]
+# Waits for listed variants and validates their output files.
+# Increments $failures and $succeeded.
+_wait_for_variants() {
+  for variant in "$@"; do
+    local pid="${PIDS[${variant}]}"
+    local md_file="${RUN_DIR}/plan-${variant}.md"
+    local logfile="${RUN_DIR}/plan-${variant}.log"
 
+    if wait "${pid}"; then
+      if [[ -f "${md_file}" ]]; then
+        local size lines
+        size=$(wc -c <"${md_file}" | tr -d ' ')
+        lines=$(wc -l <"${md_file}" | tr -d ' ')
+
+        if [[ "${size}" -lt "${MIN_OUTPUT_BYTES}" ]]; then
+          echo "  ⚠ ${variant}: plan too small (${size} bytes < ${MIN_OUTPUT_BYTES}). Likely incomplete."
+          echo "    Check: ${logfile}"
+          ((failures++)) || true
+        else
+          echo "  ✓ ${variant} completed (${lines} lines, ${size} bytes)"
+          ((succeeded++)) || true
+        fi
+      else
+        echo "  ✗ ${variant}: plan file not created (Claude didn't use Write tool)"
+        echo "    Check: ${logfile}"
+        ((failures++)) || true
+      fi
+    else
+      local exit_code=$?
+      if [[ "${exit_code}" -eq 124 ]]; then
+        echo "  ✗ ${variant} TIMED OUT after ${TIMEOUT_SECS}s"
+      else
+        echo "  ✗ ${variant} FAILED (exit code: ${exit_code})"
+      fi
+      echo "    Check: ${logfile}"
+      if [[ -f "${md_file}" ]]; then
+        local size
+        size=$(wc -c <"${md_file}" | tr -d ' ')
+        echo "    (partial plan exists: ${size} bytes)"
+      fi
+      ((failures++)) || true
+    fi
+  done
+}
+
+# _extract_skeletons <variant1> [variant2 ...]
+# Extracts section headings from completed plans as diversity context.
+# Prints the skeleton text to stdout.
+_extract_skeletons() {
+  local skeleton=""
+  for variant in "$@"; do
+    local md_file="${RUN_DIR}/plan-${variant}.md"
+    if [[ -f "${md_file}" ]] && [[ -s "${md_file}" ]]; then
+      local headings
+      headings=$(grep -E '^#{1,3} ' "${md_file}" || true)
+      if [[ -n "${headings}" ]]; then
+        skeleton+="
+── ${variant} outline ──
+${headings}
+"
+      fi
+    fi
+  done
+  echo "${skeleton}"
+}
+
+# ─── Launch sessions ──────────────────────────────────────────────────────
+
+declare -A PIDS
+STARTED_AT=$(date +%s)
+
+MODE_LABEL=""
+if [[ -n "${DEBUG_MODE}" ]]; then
+  MODE_LABEL=" (DEBUG: ${DEBUG_VARIANT} only)"
+elif [[ -n "${SEQUENTIAL_DIVERSITY}" ]]; then
+  MODE_LABEL=" (sequential-diversity: 2 waves)"
+fi
+
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║  Generating ${#VARIANTS[@]} plan variant(s)${MODE_LABEL}"
+echo "║  Model: ${MODEL} | Max turns: ${MAX_TURNS} | Timeout: ${TIMEOUT_SECS}s"
+echo "║  Output: ${RUN_DIR}/"
+echo "║  Session CWD: ${WORK_DIR}"
+echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
-echo "All ${#VARIANTS[@]} sessions launched (PIDs: ${PIDS[*]})"
-echo "Waiting for completion... (${MODEL}: ~15-25 min per session, ${TIMEOUT_SECS}s timeout)"
-echo ""
 
-# ─── Wait and validate ────────────────────────────────────────────────────
-
+# Collect variant names into an ordered array
+all_variants=("${!VARIANTS[@]}")
 failures=0
 succeeded=0
 
-for variant in "${!PIDS[@]}"; do
-  pid=${PIDS[${variant}]}
-  md_file="${RUN_DIR}/plan-${variant}.md"
-  logfile="${RUN_DIR}/plan-${variant}.log"
+if [[ -n "${SEQUENTIAL_DIVERSITY}" ]] && [[ ${#all_variants[@]} -ge 3 ]]; then
+  # ── Two-wave generation ──────────────────────────────────────────────
+  # Wave 1: first half of variants run in parallel
+  # Wave 2: remaining variants run with skeleton context from wave 1
+  wave1_count=$((${#all_variants[@]} / 2))
+  wave1_variants=("${all_variants[@]:0:${wave1_count}}")
+  wave2_variants=("${all_variants[@]:${wave1_count}}")
 
-  if wait "${pid}"; then
-    if [[ -f "${md_file}" ]]; then
-      size=$(wc -c <"${md_file}" | tr -d ' ')
-      lines=$(wc -l <"${md_file}" | tr -d ' ')
+  echo "── Wave 1: ${#wave1_variants[@]} variants ──"
+  for variant in "${wave1_variants[@]}"; do
+    _launch_variant "${variant}"
+    sleep "${STAGGER_SECS}"
+  done
+  echo ""
+  wave1_pids=""
+  for v in "${wave1_variants[@]}"; do
+    wave1_pids+="${PIDS[${v}]} "
+  done
+  echo "  Wave 1 launched (PIDs: ${wave1_pids})"
+  echo "  Waiting for wave 1 to complete..."
+  echo ""
 
-      if [[ "${size}" -lt "${MIN_OUTPUT_BYTES}" ]]; then
-        echo "  ⚠ ${variant}: plan too small (${size} bytes < ${MIN_OUTPUT_BYTES}). Likely incomplete."
-        echo "    Check: ${logfile}"
-        ((failures++)) || true
-      else
-        echo "  ✓ ${variant} completed (${lines} lines, ${size} bytes)"
-        ((succeeded++)) || true
-      fi
-    else
-      echo "  ✗ ${variant}: plan file not created (Claude didn't use Write tool)"
-      echo "    Check: ${logfile}"
-      ((failures++)) || true
-    fi
-  else
-    exit_code=$?
-    if [[ "${exit_code}" -eq 124 ]]; then
-      echo "  ✗ ${variant} TIMED OUT after ${TIMEOUT_SECS}s"
-    else
-      echo "  ✗ ${variant} FAILED (exit code: ${exit_code})"
-    fi
-    echo "    Check: ${logfile}"
-    # Check if partial plan was written before timeout/failure
-    if [[ -f "${md_file}" ]]; then
-      size=$(wc -c <"${md_file}" | tr -d ' ')
-      echo "    (partial plan exists: ${size} bytes)"
-    fi
-    ((failures++)) || true
+  _wait_for_variants "${wave1_variants[@]}"
+
+  # Extract skeletons from completed wave 1 plans
+  skeleton_text=$(_extract_skeletons "${wave1_variants[@]}")
+  diversity_context=""
+  if [[ -n "${skeleton_text}" ]]; then
+    diversity_context="
+
+## Diversity constraint
+The following plan outlines have already been generated by other analysts.
+Your plan MUST differ structurally — use different approaches, different
+technology choices, or different prioritization. Do NOT repeat their structure.
+${skeleton_text}"
+    echo ""
+    echo "  Extracted skeletons from wave 1 for diversity conditioning"
   fi
-done
+
+  echo ""
+  echo "── Wave 2: ${#wave2_variants[@]} variants (diversity-conditioned) ──"
+  for variant in "${wave2_variants[@]}"; do
+    _launch_variant "${variant}" "${diversity_context}"
+    sleep "${STAGGER_SECS}"
+  done
+
+  echo ""
+  echo "  Wave 2 launched. Waiting for completion..."
+  echo ""
+
+  _wait_for_variants "${wave2_variants[@]}"
+
+else
+  # ── All-parallel generation (default) ────────────────────────────────
+  for variant in "${all_variants[@]}"; do
+    _launch_variant "${variant}"
+    sleep "${STAGGER_SECS}"
+  done
+
+  echo ""
+  echo "All ${#VARIANTS[@]} sessions launched (PIDs: ${PIDS[*]})"
+  echo "Waiting for completion... (${MODEL}: ~15-25 min per session, ${TIMEOUT_SECS}s timeout)"
+  echo ""
+
+  _wait_for_variants "${all_variants[@]}"
+fi
 
 # ─── Summary ───────────────────────────────────────────────────────────────
 
