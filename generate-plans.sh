@@ -625,10 +625,8 @@ _build_extra_flags() {
     echo "--settings"
     echo "${SESSION_SETTINGS_FILE}"
   fi
-  if [[ -n "${SYSTEM_PROMPT}" ]]; then
-    echo "--system-prompt"
-    echo "${SYSTEM_PROMPT}"
-  fi
+  # NOTE: --system-prompt is handled directly in _launch_variant (not here)
+  # because multi-line content breaks mapfile's newline splitting.
 }
 
 # _launch_variant <variant> <extra_prompt_context>
@@ -658,10 +656,16 @@ _launch_variant() {
   # Per-variant model override (falls back to global $MODEL)
   local variant_model="${VARIANT_MODELS[${variant}]:-${MODEL}}"
 
-  # Build extra flags
+  # Build extra flags (add-dir, mcp-config, strict-mcp, settings)
   local -a extra_flags
   # shellcheck disable=SC2312 # _build_extra_flags only echoes strings; can't fail meaningfully
   mapfile -t extra_flags < <(_build_extra_flags)
+
+  # --system-prompt is handled separately: multi-line content breaks mapfile.
+  local -a sp_flag=()
+  if [[ -n "${SYSTEM_PROMPT}" ]]; then
+    sp_flag=(--system-prompt "${SYSTEM_PROMPT}")
+  fi
 
   # Run from WORK_DIR so all repos within it are accessible to Claude.
   # dontAsk + allowedTools: explicit tool whitelist for codebase exploration.
@@ -680,6 +684,7 @@ _launch_variant() {
       --setting-sources "${SETTING_SOURCES}" \
       --disable-slash-commands \
       "${extra_flags[@]}" \
+      "${sp_flag[@]}" \
       >"${logfile}" 2>&1) &
 
   PIDS[${variant}]=$!
