@@ -32,6 +32,26 @@ mcp_config: ""
 # Override in config.local.yaml to whitelist your preferred MCP servers.
 strict_mcp: true
 
+# Tools whitelist for generation sessions (--allowedTools).
+# Default: "Read,Glob,Bash,Write,WebFetch,WebSearch"
+# Add MCP tool names to allow loaded MCP servers, e.g.:
+#   allowed_tools: "Read,Glob,Bash,Write,WebFetch,WebSearch,mcp__claude_ai_Scholar_Gateway__semanticSearch"
+allowed_tools: ""
+
+# Settings sources for generation sessions (--setting-sources).
+# Default: "project,local" (isolated from user settings).
+# Set to "user,project,local" to load all user-level skills/plugins.
+setting_sources: ""
+
+# Session settings passed via --settings flag (JSON).
+# Selectively enable plugins/skills without loading all user settings.
+# This YAML dict is extracted as JSON at runtime and passed to claude.
+# Example:
+#   session_settings:
+#     enabledPlugins:
+#       context7@claude-plugins-official: true
+#       superpowers@claude-plugins-official: true
+
 # Prompt variants — each forces a different perspective on the same base prompt.
 # "baseline" should always have an empty value (no extra guidance).
 #

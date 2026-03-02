@@ -122,18 +122,26 @@ teardown() {
 
 # ─── Session isolation ───────────────────────────────────────────────────
 
-@test "all claude invocations use --setting-sources project,local" {
+@test "all claude invocations use --setting-sources" {
   # Prevents loading user-global hooks, plugins, and rules.
+  # generate-plans.sh uses configurable SETTING_SOURCES variable (default: project,local).
+  # Other scripts use hardcoded --setting-sources project,local.
   # grep -v '^\s*#' excludes comment lines from the count.
   run bash -c "
-    for f in generate-plans.sh evaluate-plans.sh merge-plans.sh verify-plan.sh; do
+    for f in evaluate-plans.sh merge-plans.sh verify-plan.sh; do
       count_invocations=\$(grep -v '^\s*#' \"\${PROJECT_ROOT}/\${f}\" | grep -c 'claude -p')
       count_isolated=\$(grep -v '^\s*#' \"\${PROJECT_ROOT}/\${f}\" | grep -c 'setting-sources project,local')
       if [[ \"\${count_invocations}\" -ne \"\${count_isolated}\" ]]; then
-        echo \"FAIL: \${f} has \${count_invocations} claude -p calls but \${count_isolated} --setting-sources project,local\"
+        echo \"FAIL: \${f} has \${count_invocations} claude -p calls but \${count_isolated} --setting-sources\"
         exit 1
       fi
     done
+    # generate-plans.sh uses SETTING_SOURCES variable
+    count_gen=\$(grep -v '^\s*#' \"\${PROJECT_ROOT}/generate-plans.sh\" | grep -c 'setting-sources')
+    if [[ \"\${count_gen}\" -lt 1 ]]; then
+      echo 'FAIL: generate-plans.sh has no --setting-sources usage'
+      exit 1
+    fi
     echo 'OK'
   "
   assert_success
@@ -207,6 +215,27 @@ teardown() {
   run bash -c "grep -c 'STRICT_MCP' '${PROJECT_ROOT}/generate-plans.sh'"
   assert_success
   [[ "${output}" -ge 2 ]]
+}
+
+@test "allowed_tools from config flows to --allowedTools in _launch_variant" {
+  # ALLOWED_TOOLS variable is used in the --allowedTools flag (not hardcoded).
+  run bash -c "grep -c 'ALLOWED_TOOLS' '${PROJECT_ROOT}/generate-plans.sh'"
+  assert_success
+  [[ "${output}" -ge 3 ]]  # config parse + resolution + usage
+}
+
+@test "setting_sources from config flows to --setting-sources in _launch_variant" {
+  # SETTING_SOURCES variable is used in the --setting-sources flag (not hardcoded).
+  run bash -c "grep -c 'SETTING_SOURCES' '${PROJECT_ROOT}/generate-plans.sh'"
+  assert_success
+  [[ "${output}" -ge 3 ]]  # config parse + resolution + usage
+}
+
+@test "session_settings from config flows to --settings via _build_extra_flags" {
+  # SESSION_SETTINGS is parsed from config and written as temp JSON for --settings.
+  run bash -c "grep -c 'SESSION_SETTINGS' '${PROJECT_ROOT}/generate-plans.sh'"
+  assert_success
+  [[ "${output}" -ge 3 ]]  # config parse + resolution + _build_extra_flags
 }
 
 @test "sensitive path warning function exists in lib/common.sh" {

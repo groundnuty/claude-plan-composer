@@ -49,6 +49,11 @@ work_dir: ""          # empty = temp dir (no file access); set for codebase plan
 add_dirs: []          # extra dirs beyond work_dir
 mcp_config: ""        # MCP server config JSON — external knowledge sources
 strict_mcp: true      # when true, --strict-mcp-config blocks user MCP servers
+allowed_tools: ""     # tools whitelist (default: Read,Glob,Bash,Write,WebFetch,WebSearch)
+setting_sources: ""   # settings sources (default: project,local; add "user" for skills)
+# session_settings:   # YAML dict → JSON, passed via --settings for selective plugin loading
+#   enabledPlugins:
+#     context7@claude-plugins-official: true
 
 # 4 variants recommended (see research/number-of-llms-sessions.md)
 # Simple form: variant_name: "guidance"

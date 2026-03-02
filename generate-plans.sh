@@ -253,7 +253,7 @@ if [[ -n "${CONFIG_FILE}" ]]; then
     # shellcheck disable=SC2312 # eval of python output is intentional
     eval "$(
       python3 - "${CONFIG_FILE}" <<'PYEOF'
-import yaml, shlex, sys
+import yaml, shlex, sys, json
 with open(sys.argv[1]) as f:
     cfg = yaml.safe_load(f)
 wd = str(cfg.get('work_dir') or '').strip()
@@ -265,6 +265,15 @@ parts = [shlex.quote(str(d)) for d in dirs]
 print('ADD_DIRS=(' + ' '.join(parts) + ')')
 strict = cfg.get('strict_mcp', False)
 print(f'CFG_STRICT_MCP={"true" if strict else "false"}')
+at = str(cfg.get('allowed_tools') or '').strip()
+print(f'CFG_ALLOWED_TOOLS={shlex.quote(at)}')
+ss = str(cfg.get('setting_sources') or '').strip()
+print(f'CFG_SETTING_SOURCES={shlex.quote(ss)}')
+sessn = cfg.get('session_settings') or {}
+if sessn:
+    print(f'CFG_SESSION_SETTINGS={shlex.quote(json.dumps(sessn))}')
+else:
+    print("CFG_SESSION_SETTINGS=''")
 PYEOF
     )"
   else
@@ -272,7 +281,7 @@ PYEOF
     # shellcheck disable=SC2312 # eval of python output is intentional
     eval "$(
       python3 - "${CONFIG_FILE}" <<'PYEOF'
-import yaml, shlex, sys
+import yaml, shlex, sys, json
 with open(sys.argv[1]) as f:
     cfg = yaml.safe_load(f)
 wd = str(cfg.get('work_dir') or '').strip()
@@ -284,6 +293,15 @@ parts = [shlex.quote(str(d)) for d in dirs]
 print('ADD_DIRS=(' + ' '.join(parts) + ')')
 strict = cfg.get('strict_mcp', False)
 print(f'CFG_STRICT_MCP={"true" if strict else "false"}')
+at = str(cfg.get('allowed_tools') or '').strip()
+print(f'CFG_ALLOWED_TOOLS={shlex.quote(at)}')
+ss = str(cfg.get('setting_sources') or '').strip()
+print(f'CFG_SETTING_SOURCES={shlex.quote(ss)}')
+sessn = cfg.get('session_settings') or {}
+if sessn:
+    print(f'CFG_SESSION_SETTINGS={shlex.quote(json.dumps(sessn))}')
+else:
+    print("CFG_SESSION_SETTINGS=''")
 variants = cfg.get('variants') or {'baseline': ''}
 for name, val in variants.items():
     if isinstance(val, dict):
@@ -336,6 +354,19 @@ fi
 
 # ─── Resolve strict MCP policy ────────────────────────────────────────────
 STRICT_MCP="${CFG_STRICT_MCP:-true}"
+
+# ─── Resolve session isolation settings ──────────────────────────────────
+ALLOWED_TOOLS="${CFG_ALLOWED_TOOLS:-Read,Glob,Bash,Write,WebFetch,WebSearch}"
+SETTING_SOURCES="${CFG_SETTING_SOURCES:-project,local}"
+
+# Session settings: write JSON to temp file if configured
+SESSION_SETTINGS_FILE=""
+if [[ -n "${CFG_SESSION_SETTINGS:-}" && "${CFG_SESSION_SETTINGS:-}" != "{}" ]]; then
+  SESSION_SETTINGS_FILE="${TMPDIR:-/tmp}/composer-session-settings-$$.json"
+  printf '%s\n' "${CFG_SESSION_SETTINGS}" >"${SESSION_SETTINGS_FILE}"
+  # shellcheck disable=SC2064 # intentional: expand path now, not at trap time
+  trap "rm -f '${SESSION_SETTINGS_FILE}'" EXIT
+fi
 
 # ─── Security warnings ───────────────────────────────────────────────────
 _warn_sensitive_paths "${WORK_DIR}" "${ADD_DIRS[@]}"
@@ -545,7 +576,7 @@ OUTINST
 }
 
 # _build_extra_flags
-# Outputs --add-dir, --mcp-config, and --strict-mcp-config flags for claude invocations.
+# Outputs --add-dir, --mcp-config, --strict-mcp-config, and --settings flags.
 _build_extra_flags() {
   for dir in "${ADD_DIRS[@]}"; do
     if [[ -d "${dir}" ]]; then
@@ -559,6 +590,10 @@ _build_extra_flags() {
   fi
   if [[ "${STRICT_MCP}" = "true" ]]; then
     echo "--strict-mcp-config"
+  fi
+  if [[ -n "${SESSION_SETTINGS_FILE}" ]] && [[ -f "${SESSION_SETTINGS_FILE}" ]]; then
+    echo "--settings"
+    echo "${SESSION_SETTINGS_FILE}"
   fi
 }
 
@@ -607,8 +642,8 @@ _launch_variant() {
       --output-format stream-json \
       --max-turns "${MAX_TURNS}" \
       --permission-mode dontAsk \
-      --allowedTools "Read,Glob,Bash,Write,WebFetch,WebSearch" \
-      --setting-sources project,local \
+      --allowedTools "${ALLOWED_TOOLS}" \
+      --setting-sources "${SETTING_SOURCES}" \
       --disable-slash-commands \
       "${extra_flags[@]}" \
       >"${logfile}" 2>&1) &
