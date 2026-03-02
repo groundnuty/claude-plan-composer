@@ -46,6 +46,8 @@ Variant prompts and additional directories are defined in YAML config files.
 ```yaml
 # config.yaml
 model: ""             # default model (default: opus; debug: sonnet). Env MODEL overrides.
+max_turns: ""         # max API round-trips (default: 80; debug: 20). Env MAX_TURNS overrides.
+timeout: ""           # hard kill timeout in seconds (default: 3600; debug: 600). Env TIMEOUT_SECS overrides.
 work_dir: ""          # empty = temp dir (no file access); set for codebase plans
 add_dirs: []          # extra dirs beyond work_dir
 mcp_config: ""        # MCP server config JSON — external knowledge sources
@@ -104,6 +106,8 @@ Merge prompts (dimensions, role, output goal) are configured via `merge-config.y
 ```yaml
 # merge-config.yaml
 model: ""             # default model (default: opus). Env MODEL overrides.
+max_turns: ""         # max API round-trips (default: 30). Env MAX_TURNS overrides.
+timeout: ""           # hard kill timeout in seconds (default: 3600). Env TIMEOUT_SECS overrides.
 work_dir: ""          # empty = temp dir; set for codebase-aware merge
 mcp_config: ""        # MCP server config JSON
 system_prompt: ""     # system prompt for merge agents (file path or inline text)

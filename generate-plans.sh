@@ -194,15 +194,15 @@ ln -sfn "${TIMESTAMP}" "${PLANS_DIR}/${PROMPT_NAME}/latest"
 # Explicit env vars always win: MODEL=opus ./generate-plans.sh --debug ...
 if [[ -n "${DEBUG_MODE}" ]]; then
   MODEL_DEFAULT="sonnet"
-  MAX_TURNS="${MAX_TURNS:-20}"
-  TIMEOUT_SECS="${TIMEOUT_SECS:-600}"
+  MAX_TURNS_DEFAULT=20
+  TIMEOUT_DEFAULT=600
   MIN_OUTPUT_BYTES=500
   STAGGER_SECS=0
   DEBUG_VARIANT="${DEBUG_VARIANT:-baseline}"
 else
   MODEL_DEFAULT="opus"
-  MAX_TURNS="${MAX_TURNS:-80}"
-  TIMEOUT_SECS="${TIMEOUT_SECS:-3600}"
+  MAX_TURNS_DEFAULT=80
+  TIMEOUT_DEFAULT=3600
   MIN_OUTPUT_BYTES=5000
   STAGGER_SECS=10
 fi
@@ -278,6 +278,10 @@ sp = str(cfg.get('system_prompt') or '').strip()
 print(f'CFG_SYSTEM_PROMPT={shlex.quote(sp)}')
 mdl = str(cfg.get('model') or '').strip()
 print(f'CFG_MODEL={shlex.quote(mdl)}')
+mt = str(cfg.get('max_turns') or '').strip()
+print(f'CFG_MAX_TURNS={shlex.quote(mt)}')
+to = str(cfg.get('timeout') or '').strip()
+print(f'CFG_TIMEOUT={shlex.quote(to)}')
 PYEOF
     )"
   else
@@ -310,6 +314,10 @@ sp = str(cfg.get('system_prompt') or '').strip()
 print(f'CFG_SYSTEM_PROMPT={shlex.quote(sp)}')
 mdl = str(cfg.get('model') or '').strip()
 print(f'CFG_MODEL={shlex.quote(mdl)}')
+mt = str(cfg.get('max_turns') or '').strip()
+print(f'CFG_MAX_TURNS={shlex.quote(mt)}')
+to = str(cfg.get('timeout') or '').strip()
+print(f'CFG_TIMEOUT={shlex.quote(to)}')
 variants = cfg.get('variants') or {'baseline': ''}
 for name, val in variants.items():
     if isinstance(val, dict):
@@ -394,9 +402,11 @@ if [[ -n "${CFG_SYSTEM_PROMPT:-}" ]]; then
   unset _sp
 fi
 
-# ─── Resolve model ───────────────────────────────────────────────────────
-# Priority: MODEL env var > config model > default (opus/sonnet for debug).
+# ─── Resolve model, max turns, timeout ───────────────────────────────────
+# Priority: env var > config > default.
 MODEL="${MODEL:-${CFG_MODEL:-${MODEL_DEFAULT}}}"
+MAX_TURNS="${MAX_TURNS:-${CFG_MAX_TURNS:-${MAX_TURNS_DEFAULT}}}"
+TIMEOUT_SECS="${TIMEOUT_SECS:-${CFG_TIMEOUT:-${TIMEOUT_DEFAULT}}}"
 
 # ─── Security warnings ───────────────────────────────────────────────────
 _warn_sensitive_paths "${WORK_DIR}" "${ADD_DIRS[@]}"

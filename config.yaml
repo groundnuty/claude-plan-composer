@@ -10,6 +10,15 @@
 # Per-variant model overrides (in variants section) take precedence.
 model: ""
 
+# Max API round-trips per session (default: 80, debug: 20).
+# Note: subagent turns don't count toward this limit.
+# Override per-run: MAX_TURNS=40 ./generate-plans.sh ...
+max_turns: ""
+
+# Hard kill timeout in seconds (default: 3600, debug: 600).
+# Override per-run: TIMEOUT_SECS=1800 ./generate-plans.sh ...
+timeout: ""
+
 # Working directory for Claude sessions.
 # Claude runs from this directory and can access all files within it.
 # Set to a parent directory containing all repos Claude should access.

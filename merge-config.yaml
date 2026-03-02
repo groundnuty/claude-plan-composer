@@ -18,6 +18,14 @@ mcp_config: ""
 # Override per-run: MODEL=sonnet ./merge-plans.sh ...
 model: ""
 
+# Max API round-trips for merge session (default: 30).
+# Override per-run: MAX_TURNS=50 ./merge-plans.sh ...
+max_turns: ""
+
+# Hard kill timeout in seconds (default: 3600).
+# Override per-run: TIMEOUT_SECS=1800 ./merge-plans.sh ...
+timeout: ""
+
 # System prompt for merge sessions (like CLAUDE.md for headless agents).
 # Passed via --system-prompt. Can be inline text or a file path (relative to
 # script directory or absolute). File contents are read at launch time.

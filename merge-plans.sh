@@ -109,7 +109,6 @@ echo ""
 # ─── Configuration ─────────────────────────────────────────────────────────
 
 MERGE_MODE="${MERGE_MODE:-agent-teams}"
-TIMEOUT_SECS="${TIMEOUT_SECS:-3600}"
 WORK_DIR_ENV="${WORK_DIR:-}"
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
 
@@ -245,6 +244,10 @@ sp = str(cfg.get('system_prompt') or '').strip()
 print(f'CFG_SYSTEM_PROMPT={shlex.quote(sp)}')
 mdl = str(cfg.get('model') or '').strip()
 print(f'CFG_MODEL={shlex.quote(mdl)}')
+mt = str(cfg.get('max_turns') or '').strip()
+print(f'CFG_MAX_TURNS={shlex.quote(mt)}')
+to = str(cfg.get('timeout') or '').strip()
+print(f'CFG_TIMEOUT={shlex.quote(to)}')
 PYEOF
 )"
 
@@ -293,9 +296,11 @@ if [[ -n "${CFG_SYSTEM_PROMPT:-}" ]]; then
   unset _sp
 fi
 
-# ─── Resolve model ───────────────────────────────────────────────────────
-# Priority: MODEL env var > config model > default (opus).
+# ─── Resolve model, max turns, timeout ───────────────────────────────────
+# Priority: env var > config > default.
 MODEL="${MODEL:-${CFG_MODEL:-opus}}"
+MAX_TURNS="${MAX_TURNS:-${CFG_MAX_TURNS:-30}}"
+TIMEOUT_SECS="${TIMEOUT_SECS:-${CFG_TIMEOUT:-3600}}"
 
 # ─── Security warnings ───────────────────────────────────────────────────
 _warn_sensitive_paths "${WORK_DIR}"
@@ -607,7 +612,7 @@ Rules:
       claude -p "${MERGE_PROMPT}" \
       --model "${MODEL}" \
       --output-format stream-json \
-      --max-turns 30 \
+      --max-turns "${MAX_TURNS}" \
       --permission-mode dontAsk \
       --allowedTools "Write" \
       --setting-sources project,local \
