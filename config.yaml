@@ -52,6 +52,16 @@ setting_sources: ""
 #       context7@claude-plugins-official: true
 #       superpowers@claude-plugins-official: true
 
+# System prompt for all generation sessions (like CLAUDE.md for headless agents).
+# Passed via --system-prompt. Can be inline text or a file path (relative to
+# script directory or absolute). File contents are read at launch time.
+# Example:
+#   system_prompt: "projects/my-project/agent-instructions.md"
+# Or inline:
+#   system_prompt: |
+#     Always cite sources. Prefer concrete examples over abstract descriptions.
+system_prompt: ""
+
 # Prompt variants — each forces a different perspective on the same base prompt.
 # "baseline" should always have an empty value (no extra guidance).
 #

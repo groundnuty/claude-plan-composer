@@ -238,6 +238,13 @@ teardown() {
   [[ "${output}" -ge 3 ]]  # config parse + resolution + _build_extra_flags
 }
 
+@test "system_prompt from config flows to --system-prompt via _build_extra_flags" {
+  # SYSTEM_PROMPT is parsed from config and passed via --system-prompt.
+  run bash -c "grep -c 'SYSTEM_PROMPT' '${PROJECT_ROOT}/generate-plans.sh'"
+  assert_success
+  [[ "${output}" -ge 3 ]]  # config parse + resolution + _build_extra_flags
+}
+
 @test "sensitive path warning function exists in lib/common.sh" {
   run bash -c "grep -c '_warn_sensitive_paths' '${PROJECT_ROOT}/lib/common.sh'"
   assert_success

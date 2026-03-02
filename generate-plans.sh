@@ -274,6 +274,8 @@ if sessn:
     print(f'CFG_SESSION_SETTINGS={shlex.quote(json.dumps(sessn))}')
 else:
     print("CFG_SESSION_SETTINGS=''")
+sp = str(cfg.get('system_prompt') or '').strip()
+print(f'CFG_SYSTEM_PROMPT={shlex.quote(sp)}')
 PYEOF
     )"
   else
@@ -302,6 +304,8 @@ if sessn:
     print(f'CFG_SESSION_SETTINGS={shlex.quote(json.dumps(sessn))}')
 else:
     print("CFG_SESSION_SETTINGS=''")
+sp = str(cfg.get('system_prompt') or '').strip()
+print(f'CFG_SYSTEM_PROMPT={shlex.quote(sp)}')
 variants = cfg.get('variants') or {'baseline': ''}
 for name, val in variants.items():
     if isinstance(val, dict):
@@ -366,6 +370,24 @@ if [[ -n "${CFG_SESSION_SETTINGS:-}" && "${CFG_SESSION_SETTINGS:-}" != "{}" ]]; 
   printf '%s\n' "${CFG_SESSION_SETTINGS}" >"${SESSION_SETTINGS_FILE}"
   # shellcheck disable=SC2064 # intentional: expand path now, not at trap time
   trap "rm -f '${SESSION_SETTINGS_FILE}'" EXIT
+fi
+
+# ─── Resolve system prompt ────────────────────────────────────────────────
+# If configured, detect file path vs inline text. Resolve relative paths.
+SYSTEM_PROMPT=""
+if [[ -n "${CFG_SYSTEM_PROMPT:-}" ]]; then
+  _sp="${CFG_SYSTEM_PROMPT}"
+  # Resolve relative paths against script directory
+  if [[ "${_sp}" != /* ]] && [[ -f "${SCRIPT_DIR}/${_sp}" ]]; then
+    _sp="${SCRIPT_DIR}/${_sp}"
+  fi
+  if [[ -f "${_sp}" ]]; then
+    SYSTEM_PROMPT="$(cat "${_sp}")"
+  else
+    # Treat as inline text
+    SYSTEM_PROMPT="${CFG_SYSTEM_PROMPT}"
+  fi
+  unset _sp
 fi
 
 # ─── Security warnings ───────────────────────────────────────────────────
@@ -576,7 +598,7 @@ OUTINST
 }
 
 # _build_extra_flags
-# Outputs --add-dir, --mcp-config, --strict-mcp-config, and --settings flags.
+# Outputs --add-dir, --mcp-config, --strict-mcp-config, --settings, --system-prompt flags.
 _build_extra_flags() {
   for dir in "${ADD_DIRS[@]}"; do
     if [[ -d "${dir}" ]]; then
@@ -594,6 +616,10 @@ _build_extra_flags() {
   if [[ -n "${SESSION_SETTINGS_FILE}" ]] && [[ -f "${SESSION_SETTINGS_FILE}" ]]; then
     echo "--settings"
     echo "${SESSION_SETTINGS_FILE}"
+  fi
+  if [[ -n "${SYSTEM_PROMPT}" ]]; then
+    echo "--system-prompt"
+    echo "${SYSTEM_PROMPT}"
   fi
 }
 

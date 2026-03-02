@@ -54,6 +54,7 @@ setting_sources: ""   # settings sources (default: project,local; add "user" for
 # session_settings:   # YAML dict → JSON, passed via --settings for selective plugin loading
 #   enabledPlugins:
 #     context7@claude-plugins-official: true
+system_prompt: ""     # system prompt for agents (file path or inline text, like CLAUDE.md)
 
 # 4 variants recommended (see research/number-of-llms-sessions.md)
 # Simple form: variant_name: "guidance"
