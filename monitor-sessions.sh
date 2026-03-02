@@ -950,7 +950,7 @@ any_running = False
 print(f"{C.BOLD}Pipeline Summary:{C.RESET} {run_dir}")
 print(f"  Last modified: {age_str}")
 
-def _render_detail_rows(log, md_size):
+def _render_detail_rows(log, md_size, indent=18):
     """Print detail rows (row 2: files+breakdown, row 3: last action)."""
     if not log:
         return
@@ -960,9 +960,9 @@ def _render_detail_rows(log, md_size):
         parts.append(f"Plan: {human_size(md_size)}")
     if log["breakdown"] != "none":
         parts.append(log["breakdown"][:40])
-    print(f"  {C.DIM}{'':>18} {' '.join(parts)}{C.RESET}")
+    print(f"  {C.DIM}{'':<{indent}} {' '.join(parts)}{C.RESET}")
     if log.get("last_action"):
-        print(f"  {C.DIM}{'':>18} \u2514\u2500 {log['last_action'][:60]}{C.RESET}")
+        print(f"  {C.DIM}{'':<{indent}} \u2514\u2500 {log['last_action'][:60]}{C.RESET}")
 
 def _ctx_str(log):
     """Format context size with percentage and color."""
@@ -990,11 +990,13 @@ gen_done = sum(1 for v in gen_variants if v["status"] == "done")
 gen_running = sum(1 for v in gen_variants if v["status"] == "running")
 if gen_running > 0:
     any_running = True
+# Variant column width — wide enough for multi-file names like 03-acceptance-strategist
+VW = 25
 print()
 label = f"GENERATE ({gen_count} variant{'s' if gen_count != 1 else ''})"
 print(f"{C.BOLD}{HR}{HR} {label} {HR * max(1, 62 - len(label))}{C.RESET}")
 if gen_variants:
-    print(f"  {'Variant':<18} {'Status':<12} {'State':>5} {'PID':>7} {'CPU':>8}"
+    print(f"  {'Variant':<{VW}} {'Status':<12} {'State':>5} {'PID':>7} {'CPU':>8}"
           f" {'Session':>10} {'Turns':>5} {'Tools':>5} {'Agents':>6}"
           f" {'Input':>6} {'Output':>6} {'Cache+':>7} {f'Cache{ARROW}':>7} {'Total':>7}"
           f" {'Ctx':>8} {'C#':>3} {'Activity':>8}")
@@ -1019,11 +1021,11 @@ if gen_variants:
         comp = _compact_str(log)
         log_size = log["size"] if log else 0
         activity = _activity_str(v["variant"], log_size)
-        print(f"  {v['variant']:<18} {pad(st, 12, '<')} {pad(state_s, 5)} {pid_s:>7} {cpu_s:>8}"
+        print(f"  {v['variant']:<{VW}} {pad(st, 12, '<')} {pad(state_s, 5)} {pid_s:>7} {cpu_s:>8}"
               f" {sid:>10} {turns:>5} {tools:>5} {agents_s:>6}"
               f" {t_in:>6} {t_out:>6} {t_cc:>7} {t_cr:>7} {t_tot:>7}"
               f" {pad(ctx, 8)} {pad(comp, 3)} {pad(activity, 8)}")
-        _render_detail_rows(log, v["md_size"])
+        _render_detail_rows(log, v["md_size"], VW)
 else:
     print(f"  {C.DIM}No plan logs found{C.RESET}")
 
