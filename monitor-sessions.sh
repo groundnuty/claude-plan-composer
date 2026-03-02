@@ -754,7 +754,13 @@ def parse_stream_json(log_path):
 # ── Status detection ────────────────────────────────────────────────────
 
 def _find_running_processes():
-    """Find all running claude -p processes. Returns {variant: {pid, state, cputime}}."""
+    """Find running claude processes. Returns {variant: {pid, state, cputime}}.
+
+    Detects both headless (claude -p) and interactive (claude --model) sessions:
+    - Generate variants: matched by plan-{variant}.md/log in args
+    - Simple merge: matched by merge keywords in claude -p args
+    - Agent-teams merge: matched by merge-prompt.md in interactive claude args
+    """
     result = {}
     try:
         ps_out = subprocess.check_output(
@@ -765,13 +771,21 @@ def _find_running_processes():
             if len(parts) < 4:
                 continue
             pid, state, cputime, args = parts
-            if "claude -p" not in args:
+            if "claude" not in args:
                 continue
+            proc_info = {"pid": int(pid), "state": state, "cputime": cputime}
+            # Headless plan generation
             m = re.search(r'plan-([A-Za-z0-9_-]+)\.(?:md|log)', args)
             if m:
-                result[m.group(1)] = {"pid": int(pid), "state": state, "cputime": cputime}
-            elif "merge" in args.lower() and ("merged plan" in args or "comparison table" in args):
-                result["merge"] = {"pid": int(pid), "state": state, "cputime": cputime}
+                result[m.group(1)] = proc_info
+            # Simple merge (headless claude -p with merge content)
+            elif "claude -p" in args and "merge" in args.lower() and (
+                "merged plan" in args or "comparison table" in args
+            ):
+                result["merge"] = proc_info
+            # Agent-teams merge (interactive claude with merge-prompt.md)
+            elif "merge-prompt" in args and "claude" in args:
+                result["merge"] = proc_info
     except Exception:
         pass
     return result
@@ -855,6 +869,106 @@ def _find_agents_from_jsonl(session_id):
             pass
     return agents_running, agents_total
 
+def _find_merge_jsonl(run_dir):
+    """Find JSONL transcript for an agent-teams merge session.
+
+    Looks for merge-prompt.md in run_dir, then finds JSONL files in
+    ~/.claude/projects/ created after the merge prompt was written.
+    Returns the path to the most recent matching JSONL, or None.
+    """
+    prompt_path = os.path.join(run_dir, "merge-prompt.md")
+    if not os.path.exists(prompt_path):
+        return None
+    prompt_mtime = os.path.getmtime(prompt_path)
+    # Search all project dirs for recent JSONL files
+    candidates = []
+    for jsonl in glob.glob(os.path.expanduser("~/.claude/projects/*/*.jsonl")):
+        try:
+            if os.path.getmtime(jsonl) >= prompt_mtime:
+                candidates.append(jsonl)
+        except OSError:
+            pass
+    if not candidates:
+        return None
+    # Check which JSONL references the merge prompt (or run_dir)
+    for jsonl in sorted(candidates, key=os.path.getmtime, reverse=True):
+        try:
+            with open(jsonl) as f:
+                head = f.read(10000)
+                if "merge-prompt" in head or run_dir in head:
+                    return jsonl
+        except Exception:
+            pass
+    return None
+
+def parse_jsonl_transcript(jsonl_path):
+    """Parse a JSONL transcript for metrics (turns, tools, agents, tokens).
+
+    Returns a dict compatible with parse_stream_json output, or None.
+    """
+    if not jsonl_path or not os.path.exists(jsonl_path):
+        return None
+    turns = 0
+    tool_names = []
+    agent_last_seen = {}
+    try:
+        fsize = os.path.getsize(jsonl_path)
+        with open(jsonl_path) as f:
+            for raw in f:
+                try:
+                    d = json.loads(raw)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if d.get("type") == "assistant" and not d.get("isSidechain"):
+                    turns += 1
+                    for block in d.get("message", {}).get("content", []):
+                        if block.get("type") == "tool_use":
+                            tool_names.append(block.get("name", ""))
+                aid = d.get("agentId")
+                if aid and d.get("isSidechain"):
+                    ts = d.get("timestamp", "")
+                    if ts > agent_last_seen.get(aid, ""):
+                        agent_last_seen[aid] = ts
+    except Exception:
+        return None
+    # Count running agents
+    agents_total = len(agent_last_seen)
+    agents_running = 0
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    for ts in agent_last_seen.values():
+        try:
+            last = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if (now_utc - last).total_seconds() < 120:
+                agents_running += 1
+        except Exception:
+            pass
+    # Build tool breakdown
+    from collections import Counter
+    tc = Counter(tool_names)
+    breakdown = ",".join(f"{n}({c})" for n, c in tc.most_common(5)) if tc else "none"
+    # Last action
+    last_action = ""
+    if tool_names:
+        last_action = tool_names[-1]
+    return {
+        "size": os.path.getsize(jsonl_path),
+        "turns": turns,
+        "tools": len(tool_names),
+        "breakdown": breakdown,
+        "last_action": last_action,
+        "session_id": "",
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_create": 0,
+        "cache_read": 0,
+        "total_tokens": 0,
+        "ctx_tokens": 0,
+        "ctx_pct": 0,
+        "compactions": 0,
+        "agents_running": agents_running,
+        "agents_total": agents_total,
+    }
+
 SNAPSHOT = "/tmp/claude-monitor-summary-sizes.json"
 
 def _load_snapshot():
@@ -916,13 +1030,32 @@ eval_json_exists, eval_json_size = file_info(os.path.join(run_dir, "evaluation.j
 # MERGE stage
 merge_log_path = os.path.join(run_dir, "merge.log")
 merge_md_path = os.path.join(run_dir, "merged-plan.md")
+merge_prompt_path = os.path.join(run_dir, "merge-prompt.md")
 merge_parsed = parse_stream_json(merge_log_path) if os.path.exists(merge_log_path) else None
 merge_status, merge_proc = detect_status(merge_log_path, merge_md_path, "merge")
 merge_md_exists, merge_md_size = file_info(merge_md_path)
-if merge_status == "running":
-    any_running = True
+merge_is_agent_teams = False
+# Agent-teams fallback: no merge.log but merge-prompt.md exists
+if not merge_parsed and os.path.exists(merge_prompt_path):
+    merge_is_agent_teams = True
+    merge_proc = _running_procs.get("merge")
+    if merge_md_exists and merge_md_size >= 1000:
+        merge_status = "done"
+    elif merge_proc:
+        merge_status = "running"
+    else:
+        # Prompt exists, no process, no output — check if recently modified
+        prompt_age = time.time() - os.path.getmtime(merge_prompt_path)
+        merge_status = "failed" if prompt_age > 300 else "running"
+    # Try to find JSONL transcript for richer metrics
+    merge_jsonl = _find_merge_jsonl(run_dir)
+    if merge_jsonl:
+        merge_parsed = parse_jsonl_transcript(merge_jsonl)
 merge_agents_r, merge_agents_t = 0, 0
-if merge_parsed and merge_parsed.get("session_id"):
+if merge_parsed and merge_parsed.get("agents_running") is not None:
+    merge_agents_r = merge_parsed.get("agents_running", 0)
+    merge_agents_t = merge_parsed.get("agents_total", 0)
+elif merge_parsed and merge_parsed.get("session_id"):
     merge_agents_r, merge_agents_t = _find_agents_from_jsonl(merge_parsed["session_id"])
 
 # VERIFY stage
@@ -1040,8 +1173,11 @@ if eval_json_exists:
     print(f"  evaluation.json   {human_size(eval_json_size):>8}   {status_colored('done')}")
 
 # -- MERGE --
+if merge_status == "running":
+    any_running = True
+merge_mode_label = " (agent-teams)" if merge_is_agent_teams else ""
 print()
-print(f"{C.BOLD}{HR}{HR} MERGE {HR * 56}{C.RESET}")
+print(f"{C.BOLD}{HR}{HR} MERGE{merge_mode_label} {HR * max(1, 56 - len(merge_mode_label))}{C.RESET}")
 if merge_parsed:
     print(f"  {'Status':<12} {'State':>5} {'PID':>7} {'CPU':>8}"
           f" {'Session':>10} {'Turns':>5} {'Tools':>5} {'Agents':>6}"
@@ -1068,6 +1204,11 @@ if merge_parsed:
           f" {t_in:>6} {t_out:>6} {t_cc:>7} {t_cr:>7} {t_tot:>7}"
           f" {pad(ctx, 8)} {pad(comp, 3)} {pad(m_activity, 8)}")
     _render_detail_rows(merge_parsed, merge_md_size if merge_md_exists else 0)
+elif merge_status == "running" and merge_proc:
+    # Agent-teams merge running but no JSONL found yet
+    st = status_colored("running")
+    state_s = _state_colored(merge_proc["state"])
+    print(f"  {pad(st, 12, '<')} {pad(state_s, 5)} {merge_proc['pid']:>7} {merge_proc['cputime']:>8}")
 elif merge_status == "not started":
     print(f"  {status_colored('not started')}")
 else:
