@@ -134,5 +134,5 @@ for i in range(${turns}):
   run "${PROJECT_ROOT}/monitor-sessions.sh" --summary "${TEST_TEMP_DIR}"
   assert_success
   assert_output --partial "Totals"
-  assert_output --partial "Stages:"
+  assert_output --partial "stages done"
 }

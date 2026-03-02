@@ -181,6 +181,9 @@ TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 RUN_DIR="${PLANS_DIR}/${PROMPT_NAME}/${TIMESTAMP}"
 mkdir -p "${RUN_DIR}"
 
+# Update latest symlink immediately so monitor --summary works during the run.
+ln -sfn "${TIMESTAMP}" "${PLANS_DIR}/${PROMPT_NAME}/latest"
+
 # ─── Configuration ─────────────────────────────────────────────────────────
 
 # ─── Debug mode defaults ──────────────────────────────────────────────────

@@ -602,13 +602,15 @@ def human_size(b):
     if b > 1024: return f"{b/1024:.1f}KB"
     return f"{b}B"
 
+def colored(text, color):
+    return f"{color}{text}{C.RESET}"
+
 def status_colored(status):
     colors = {
         "done": C.GREEN, "running": C.CYAN,
         "failed": C.RED, "not started": C.DIM, "not run": C.DIM,
     }
-    c = colors.get(status, C.DIM)
-    return f"{c}{status}{C.RESET}"
+    return colored(status, colors.get(status, C.DIM))
 
 def file_info(path):
     """Return (exists, size) for a file path."""
@@ -724,6 +726,8 @@ merge_md_path = os.path.join(run_dir, "merged-plan.md")
 merge_parsed = parse_stream_json(merge_log_path) if os.path.exists(merge_log_path) else None
 merge_status = detect_status(merge_log_path, merge_md_path)
 merge_md_exists, merge_md_size = file_info(merge_md_path)
+if merge_status == "running":
+    any_running = True
 
 # VERIFY stage
 report_exists, report_size = file_info(os.path.join(run_dir, "verification-report.md"))
@@ -732,12 +736,30 @@ premortem_exists, premortem_size = file_info(os.path.join(run_dir, "pre-mortem.m
 # ── Render ──────────────────────────────────────────────────────────────
 
 print()
+# Directory age — how fresh is this run?
+dir_mtime = os.path.getmtime(run_dir)
+age_secs = time.time() - dir_mtime
+if age_secs < 120:
+    age_str = colored("just now", C.GREEN)
+elif age_secs < 3600:
+    age_str = colored(f"{int(age_secs / 60)}m ago", C.CYAN)
+elif age_secs < 86400:
+    age_str = colored(f"{int(age_secs / 3600)}h ago", C.YELLOW)
+else:
+    age_str = colored(f"{int(age_secs / 86400)}d ago", C.RED)
+
+# Detect if any stage is still running
+any_running = False
+
 print(f"{C.BOLD}Pipeline Summary:{C.RESET} {run_dir}")
+print(f"  Last modified: {age_str}")
 
 # -- GENERATE --
 gen_count = len(gen_variants)
 gen_done = sum(1 for v in gen_variants if v["status"] == "done")
 gen_running = sum(1 for v in gen_variants if v["status"] == "running")
+if gen_running > 0:
+    any_running = True
 print()
 label = f"GENERATE ({gen_count} variant{'s' if gen_count != 1 else ''})"
 print(f"{C.BOLD}── {label} {'─' * max(1, 62 - len(label))}{C.RESET}")
@@ -805,7 +827,10 @@ if merge_parsed:
 
 print()
 print(f"{C.BOLD}── Totals {'─' * 55}{C.RESET}")
-print(f"  Stages: {stages_done}/4 complete")
+status_label = colored("running", C.CYAN) if any_running else (
+    colored("complete", C.GREEN) if stages_done == 4 else colored("incomplete", C.YELLOW)
+)
+print(f"  Status: {status_label} — {stages_done}/4 stages done")
 if gen_count > 0:
     parts = []
     if gen_done > 0:
