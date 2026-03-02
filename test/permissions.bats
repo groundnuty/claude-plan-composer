@@ -160,6 +160,30 @@ teardown() {
 
 # ─── Config validation ────────────────────────────────────────────────────
 
+# ─── Output format ────────────────────────────────────────────────────────
+
+@test "plan generation uses stream-json output format" {
+  run bash -c "
+    grep -v '^\s*#' '${PROJECT_ROOT}/generate-plans.sh' \
+      | grep -A2 'claude -p.*full_prompt' \
+      | grep -c 'output-format stream-json'
+  "
+  assert_success
+  [[ "${output}" -ge 1 ]]
+}
+
+@test "simple merge uses stream-json output format" {
+  run bash -c "
+    grep -v '^\s*#' '${PROJECT_ROOT}/merge-plans.sh' \
+      | grep -A2 'claude -p.*MERGE_PROMPT' \
+      | grep -c 'output-format stream-json'
+  "
+  assert_success
+  [[ "${output}" -ge 1 ]]
+}
+
+# ─── Config validation ────────────────────────────────────────────────────
+
 @test "sensitive path warning function exists in lib/common.sh" {
   run bash -c "grep -c '_warn_sensitive_paths' '${PROJECT_ROOT}/lib/common.sh'"
   assert_success

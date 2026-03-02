@@ -34,7 +34,7 @@ The scripts are domain-agnostic. Domain-specific configuration lives in `config.
    - Optional `--pre-mortem` flag for failure scenario analysis.
    - Exit code 1 if any gate fails.
 
-5. **Monitor** (`monitor-sessions.sh`): Real-time dashboard showing running Claude sessions — tracks PID, variant, transcript size, tool calls, subagents, token usage, context window utilization, compactions, and last action. Parses JSONL transcripts from `~/.claude/projects/`. Auto-exits in `--watch` mode when all sessions finish.
+5. **Monitor** (`monitor-sessions.sh`): Real-time dashboard showing running Claude sessions — tracks PID, variant, transcript size, tool calls, subagents, token usage, context window utilization, compactions, and last action. Parses JSONL transcripts from `~/.claude/projects/` and stream-json logs from the run directory. Auto-exits in `--watch` mode when all sessions finish.
 
 ## Configuration
 
@@ -215,8 +215,10 @@ generated-plans/<name>/latest -> <timestamp>   # symlink
 - **Write tool for output capture**: `--output-format text` only captures the LAST assistant message. Multi-turn research sessions lose intermediate content. The prompt instructs Claude to write the complete plan via the Write tool.
 - **Configurable work_dir**: Sessions run from `work_dir` (set in config). If empty or missing, sessions run in a temporary directory with no file access — useful for non-codebase plans. `--add-dir` flags don't propagate to subagents, so CWD must encompass all needed files.
 - **`CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000`**: Overrides any shell default, which may truncate plans.
-- **`--dangerously-skip-permissions`**: Required for headless `-p` mode where no interactive user can approve tool use.
-- **Monitor variant detection**: Uses output file path matching (`plan-baseline.md`, etc.) which works regardless of prompt content. Falls back to prompt text matching for legacy compatibility.
+- **Permission model**: Sessions use `--permission-mode dontAsk` with explicit `--allowedTools` whitelists (e.g., `"Write"` for merge, `"Read,Write,Bash,Glob,Grep"` for generation). Never uses `--dangerously-skip-permissions`.
+- **Session isolation**: All `claude -p` invocations use `--setting-sources project,local` and `--disable-slash-commands` to prevent loading user-global hooks, plugins, and skills.
+- **`--output-format stream-json`**: File-redirect invocations (generate, merge) use NDJSON streaming output. Variable-capture invocations (lens, eval, verify) use `--output-format text`.
+- **Monitor variant detection**: Uses regex matching on output file path pattern (`plan-{variant}.md`) which works for any variant name. Also parses stream-json log files from the run directory for reliable variant detection via filename.
 
 ## Environment Variables
 
@@ -274,12 +276,33 @@ make fmt       # shfmt format in-place
 make fmt-check # shfmt check without modifying
 ```
 
-Test structure (44 tests across 5 files):
-- `test/merge-config.bats` — config parsing, weighted dimensions, constitution, comparison_method validation
+Test structure (58 tests across 6 files):
 - `test/generate-plans.bats` — flag parsing, multi-file mode, sequential diversity
-- `test/evaluate-plans.bats` — convergence check, LLM evaluation
 - `test/auto-lenses.bats` — lens generation, edge cases
 - `test/verify-plan.bats` — quality gates, pre-mortem
+- `test/evaluate-plans.bats` — convergence check, LLM evaluation
+- `test/merge-plans.bats` — config parsing, weighted dimensions, constitution, comparison_method validation
+- `test/permissions.bats` — security flags, XML boundaries, isolation, output format
+
+All unit tests are static (grep/awk source files) — no API calls, no `claude` invocations.
+Tests that parse real prompt files set `TIMEOUT_SECS=5` so they fail fast if `claude` runs.
+
+Running tests:
+```bash
+make check                           # full: syntax + shellcheck + shfmt + bats
+make test                            # bats only
+devbox run -- bats test/             # bats directly
+devbox run -- bats test/permissions.bats   # single file
+make test-e2e                        # e2e (requires Claude API, ~$1, ~5 min)
+```
+
+## Shared Library
+
+`lib/common.sh` — sourced by all scripts. Provides:
+- `_preflight_check` — verify python3, PyYAML, bash 4+
+- `_require_claude` — verify claude CLI on PATH
+- `_warn_sensitive_paths` — warn about credential dirs or overly broad scopes
+- `_stream_json_tools`, `_stream_json_last_tool`, `_stream_json_turns`, `_stream_json_summary` — parse stream-json NDJSON logs
 
 ## Research Notes
 
@@ -288,3 +311,5 @@ The `research/` directory contains analysis that informed the design:
 - `cloud-sessions-analysis.md` — Comparison of local `claude -p`, cloud sessions, and agent teams approaches
 - `turns-in-claude.md` — How turns work, subagent turn counting, and `--max-turns` behavior
 - `methodology-improvements.md` — 50+ references: conflict classification, constitutional AI, pairwise comparison, sequential diversity conditioning, and the 7-PR improvement roadmap
+- `claude-p-headless-pitfalls.md` — 9 hard-won pitfalls of headless `claude -p` pipelines
+- `headless-observability.md` — 5 observability approaches for headless pipelines

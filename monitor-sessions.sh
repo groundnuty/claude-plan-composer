@@ -62,19 +62,13 @@ for line in ps_out.strip().split("\n")[1:]:
     if "claude -p" not in args: continue
     if args.startswith("timeout"): continue  # skip wrapper
 
-    # Detect variant from full command line.
-    # Primary: match output file path (domain-agnostic).
-    # Fallback: match variant-specific prompt text.
+    # Detect variant from full command line (domain-agnostic).
+    # Strategy: match output file path pattern plan-{variant}.md in args.
     variant = "unknown"
-    if "plan-simplicity.md" in args or "Prioritize simplicity" in args:
-        variant = "simplicity"
-    elif "plan-framework-depth.md" in args or "mcp-agent framework patterns" in args:
-        variant = "framework-depth"
-    elif "plan-k8s-ops.md" in args or "K8s deployment depth" in args:
-        variant = "k8s-ops"
-    elif "plan-baseline.md" in args:
-        variant = "baseline"
-    elif "merged plan" in args or "comparison table" in args:
+    m = re.search(r'plan-([A-Za-z0-9_-]+)\.(?:md|log)', args)
+    if m:
+        variant = m.group(1)
+    elif "merge" in args.lower() and ("merged plan" in args or "comparison table" in args):
         variant = "merge"
 
     sessions.append({"pid": pid, "cputime": cputime, "variant": variant})
@@ -125,31 +119,14 @@ for proj_dir in proj_dirs:
                                 c.get("text", "") for c in content
                                 if isinstance(c, dict) and c.get("type") == "text"
                             )
-                        # Match by variant-specific prompt text
-                        if "Prioritize simplicity" in content:
-                            detected_variant = "simplicity"
-                            break
-                        elif "mcp-agent framework patterns" in content:
-                            detected_variant = "framework-depth"
-                            break
-                        elif "K8s deployment depth" in content:
-                            detected_variant = "k8s-ops"
+                        # Generic variant detection from output file path.
+                        # Matches plan-{variant}.md in prompt content.
+                        pm = re.search(r'plan-([A-Za-z0-9_-]+)\.md', content)
+                        if pm:
+                            detected_variant = pm.group(1)
                             break
                         elif "merged plan" in content or "comparison table" in content:
                             detected_variant = "merge"
-                            break
-                        # Match by output file path (works for any prompt content)
-                        elif "plan-simplicity.md" in content:
-                            detected_variant = "simplicity"
-                            break
-                        elif "plan-framework-depth.md" in content:
-                            detected_variant = "framework-depth"
-                            break
-                        elif "plan-k8s-ops.md" in content:
-                            detected_variant = "k8s-ops"
-                            break
-                        elif "plan-baseline.md" in content:
-                            detected_variant = "baseline"
                             break
                     except: pass
         except: continue
@@ -302,6 +279,85 @@ for proj_dir in proj_dirs:
             if variant_key not in jsonl_info or mtime > jsonl_mtime.get(variant_key, 0):
                 jsonl_info[variant_key] = info
                 jsonl_mtime[variant_key] = mtime
+
+# ── Parse stream-json logs from run directory ─────────────────────────────
+# Stream-json logs have predictable paths: plan-{variant}.log, merge.log.
+# This gives reliable variant detection from filename (domain-agnostic)
+# and supplements JSONL data when transcript matching fails.
+
+def _find_latest_run_dir():
+    """Find the most recent run directory under generated-plans/."""
+    for prompt_dir in sorted(glob.glob(os.path.join(PLAN_GEN_DIR, "*")),
+                             key=os.path.getmtime, reverse=True):
+        if not os.path.isdir(prompt_dir) or os.path.islink(prompt_dir):
+            continue
+        subdirs = [
+            d for d in sorted(os.listdir(prompt_dir), reverse=True)
+            if os.path.isdir(os.path.join(prompt_dir, d))
+            and not os.path.islink(os.path.join(prompt_dir, d))
+        ]
+        if subdirs:
+            return os.path.join(prompt_dir, subdirs[0])
+    return None
+
+run_dir = _find_latest_run_dir()
+if run_dir:
+    for log_path in glob.glob(os.path.join(run_dir, "*.log")):
+        fname = os.path.basename(log_path)
+        # Extract variant from filename: plan-simplicity.log → simplicity
+        if fname.startswith("plan-") and fname.endswith(".log"):
+            sj_variant = fname[5:-4]
+        elif fname == "merge.log":
+            sj_variant = "merge"
+        else:
+            continue
+
+        sj_mtime = os.path.getmtime(log_path)
+        if time.time() - sj_mtime > 600:
+            continue  # skip stale logs
+
+        # Skip if JSONL already matched this variant (JSONL has richer data)
+        if sj_variant in jsonl_info:
+            continue
+
+        sj_size = os.path.getsize(log_path)
+        sj_tools = 0
+        sj_turns = 0
+        sj_last_action = "?"
+        try:
+            with open(log_path, "r") as f:
+                for raw_line in f:
+                    try:
+                        d = json.loads(raw_line)
+                        if d.get("type") == "assistant":
+                            sj_turns += 1
+                            for c in d.get("message", {}).get("content", []):
+                                if isinstance(c, dict) and c.get("type") == "tool_use":
+                                    sj_tools += 1
+                                    name = c.get("name", "?")
+                                    inp = c.get("input", {})
+                                    if name == "Write":
+                                        fp = inp.get("file_path", "")
+                                        sj_last_action = f"Write({os.path.basename(fp)})"
+                                    elif name == "Read":
+                                        fp = inp.get("file_path", "")
+                                        sj_last_action = f"Read({os.path.basename(fp)})"
+                                    else:
+                                        sj_last_action = name
+                    except:
+                        pass
+        except:
+            continue
+
+        jsonl_info[sj_variant] = {
+            "sid": "stream", "size": sj_size, "tools": sj_tools,
+            "agents_running": 0, "agents_total": 0,
+            "last_action": sj_last_action, "path": log_path,
+            "turns": sj_turns, "compactions": 0,
+            "total_input": 0, "total_output": 0,
+            "total_cache_create": 0, "total_cache_read": 0,
+            "total_tokens": 0, "context_size": 0,
+        }
 
 # ── Load previous snapshot ──────────────────────────────────────────────
 prev_sizes = {}
@@ -521,6 +577,31 @@ PYEOF
 }
 
 # ─── Entry point ───────────────────────────────────────────────────────────
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+if [[ "${1:-}" = "-h" ]] || [[ "${1:-}" = "--help" ]]; then
+  cat <<'HELP'
+Usage: ./monitor-sessions.sh [--watch [INTERVAL]]
+
+  Real-time dashboard for running Claude Code plan-generation sessions.
+  Tracks PIDs, token usage, context window, subagents, and last action.
+
+Flags:
+  --watch [SECS]    Refresh every SECS seconds (default: 15)
+  -h, --help        Show this help
+
+Examples:
+  ./monitor-sessions.sh              # one-shot table
+  ./monitor-sessions.sh --watch      # refresh every 15s
+  ./monitor-sessions.sh --watch 5    # refresh every 5s
+HELP
+  exit 0
+fi
+
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+_preflight_check_python
 
 if [[ "${1:-}" = "--watch" ]]; then
   interval="${2:-15}"

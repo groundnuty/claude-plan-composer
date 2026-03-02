@@ -590,7 +590,7 @@ _launch_variant() {
       timeout --foreground --verbose "${TIMEOUT_SECS}" \
       claude -p "${full_prompt}" \
       --model "${variant_model}" \
-      --output-format text \
+      --output-format stream-json \
       --max-turns "${MAX_TURNS}" \
       --permission-mode dontAsk \
       --allowedTools "Read,Glob,Bash,Write,WebFetch,WebSearch" \
@@ -763,6 +763,9 @@ else
   echo ""
   echo "All ${#VARIANTS[@]} sessions launched (PIDs: ${PIDS[*]})"
   echo "Waiting for completion... (${MODEL}: ~15-25 min per session, ${TIMEOUT_SECS}s timeout)"
+  echo ""
+  echo "  Monitor live:"
+  echo "    tail -f ${RUN_DIR}/plan-*.log | jq -r 'select(.type==\"assistant\") | .message.content[]? | select(.type==\"tool_use\") | .name'"
   echo ""
 
   _wait_for_variants "${all_variants[@]}"

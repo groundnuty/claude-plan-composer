@@ -3,7 +3,8 @@
   "packages": [
     "shellcheck@latest",
     "shfmt@latest",
-    "bats@latest"
+    "bats@latest",
+    "jq@latest"
   ],
   "shell": {
     "init_hook": [

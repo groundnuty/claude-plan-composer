@@ -113,3 +113,57 @@ _warn_sensitive_paths() {
     echo ""
   fi
 }
+
+# ─── Stream-JSON log helpers ──────────────────────────────────────────────────
+# Parse stream-json logs (NDJSON) produced by `claude -p --output-format stream-json`.
+# Requires jq on PATH.
+
+# _stream_json_tools — extract tool call names from a stream-json log file.
+# Usage: _stream_json_tools "${logfile}"
+# Output: one tool name per line (e.g., "Read", "Write", "Bash")
+_stream_json_tools() {
+  local logfile="$1"
+  jq -r '
+    select(.type == "assistant")
+    | .message.content[]?
+    | select(.type == "tool_use")
+    | .name
+  ' "${logfile}" 2>/dev/null
+}
+
+# _stream_json_last_tool — get the most recent tool call from a stream-json log.
+# Usage: _stream_json_last_tool "${logfile}"
+_stream_json_last_tool() {
+  local logfile="$1"
+  # shellcheck disable=SC2312
+  _stream_json_tools "${logfile}" | tail -1
+}
+
+# _stream_json_turns — count completed assistant turns in a stream-json log.
+# Usage: _stream_json_turns "${logfile}"
+_stream_json_turns() {
+  local logfile="$1"
+  # shellcheck disable=SC2312
+  jq -r 'select(.type == "assistant") | .type' "${logfile}" 2>/dev/null \
+    | wc -l | tr -d ' '
+}
+
+# _stream_json_summary — one-line summary of a stream-json log.
+# Usage: _stream_json_summary "${logfile}"
+# Output: "3 turns, 7 tool calls (Read,Bash,Write), 1.4KB"
+_stream_json_summary() {
+  local logfile="$1"
+  local turns tools tool_count size
+
+  turns=$(_stream_json_turns "${logfile}")
+  # shellcheck disable=SC2312
+  tools=$(_stream_json_tools "${logfile}" | sort | uniq -c | sort -rn \
+    | awk '{print $2}' | paste -sd, -)
+  # shellcheck disable=SC2312
+  tool_count=$(_stream_json_tools "${logfile}" | wc -l | tr -d ' ')
+  # shellcheck disable=SC2312
+  size=$(wc -c <"${logfile}" 2>/dev/null | tr -d ' ')
+  size=$((size / 1024))
+
+  echo "${turns} turns, ${tool_count} tool calls (${tools:-none}), ${size}KB"
+}

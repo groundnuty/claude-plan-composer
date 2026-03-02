@@ -552,6 +552,10 @@ Rules:
 
   logfile="${RUN_DIR}/merge.log"
 
+  echo "  Monitor live:"
+  echo "    tail -f ${logfile} | jq -r 'select(.type==\"assistant\") | .message.content[]? | select(.type==\"tool_use\") | .name'"
+  echo ""
+
   # Run from WORK_DIR so subagents can access files if needed.
   # Claude writes merged plan to $merge_md via Write tool.
   # stdout + stderr go to logfile for debugging.
@@ -572,7 +576,7 @@ Rules:
       timeout --foreground --verbose "${TIMEOUT_SECS}" \
       claude -p "${MERGE_PROMPT}" \
       --model "${MODEL}" \
-      --output-format text \
+      --output-format stream-json \
       --max-turns 30 \
       --permission-mode dontAsk \
       --allowedTools "Write" \
