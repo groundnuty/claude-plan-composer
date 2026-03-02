@@ -104,6 +104,7 @@ Merge prompts (dimensions, role, output goal) are configured via `merge-config.y
 # merge-config.yaml
 work_dir: ""          # empty = temp dir; set for codebase-aware merge
 mcp_config: ""        # MCP server config JSON
+system_prompt: ""     # system prompt for merge agents (file path or inline text)
 project_description: "the project"
 role: "an expert analyst"
 

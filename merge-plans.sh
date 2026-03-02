@@ -241,6 +241,9 @@ else:
 const = cfg.get('constitution', defaults['constitution'])
 const_list = chr(10).join(f'   - {c}' for c in const)
 print(f'MCFG_CONSTITUTION={shlex.quote(const_list)}')
+
+sp = str(cfg.get('system_prompt') or '').strip()
+print(f'CFG_SYSTEM_PROMPT={shlex.quote(sp)}')
 PYEOF
 )"
 
@@ -271,6 +274,22 @@ if [[ -n "${CFG_MCP_CONFIG:-}" ]]; then
     echo "Warning: mcp_config file not found: ${MCP_CONFIG} (skipping)"
     MCP_CONFIG=""
   fi
+fi
+
+# ─── Resolve system prompt ───────────────────────────────────────────────
+SYSTEM_PROMPT=""
+if [[ -n "${CFG_SYSTEM_PROMPT:-}" ]]; then
+  _sp="${CFG_SYSTEM_PROMPT}"
+  # Resolve relative paths against script directory
+  if [[ "${_sp}" != /* ]] && [[ -f "${SCRIPT_DIR}/${_sp}" ]]; then
+    _sp="${SCRIPT_DIR}/${_sp}"
+  fi
+  if [[ -f "${_sp}" ]]; then
+    SYSTEM_PROMPT="$(cat "${_sp}")"
+  else
+    SYSTEM_PROMPT="${CFG_SYSTEM_PROMPT}"
+  fi
+  unset _sp
 fi
 
 # ─── Security warnings ───────────────────────────────────────────────────
@@ -360,15 +379,18 @@ PROMPT_FOOTER_EOF
 
   # Interactive mode: no -p flag. Pass initial prompt as positional argument.
   # exec replaces shell — Claude runs interactively, user can debate.
-  mcp_flags=()
+  extra_flags=()
   if [[ -n "${MCP_CONFIG}" ]]; then
-    mcp_flags+=(--mcp-config "${MCP_CONFIG}")
+    extra_flags+=(--mcp-config "${MCP_CONFIG}")
+  fi
+  if [[ -n "${SYSTEM_PROMPT}" ]]; then
+    extra_flags+=(--system-prompt "${SYSTEM_PROMPT}")
   fi
 
   exec env CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 \
     CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000 \
     claude --model "${MODEL}" \
-    "${mcp_flags[@]}" \
+    "${extra_flags[@]}" \
     "Read the merge prompt at ${merge_prompt_file} and follow its instructions. The plan files are in ${RUN_DIR}/."
 
 # ─── Simple headless merge ─────────────────────────────────────────────────
@@ -562,9 +584,12 @@ Rules:
   #
   # dontAsk + allowedTools Write: merge only needs to write the output file.
   # All plan content is embedded in the prompt — no file reads required.
-  mcp_flags=()
+  extra_merge_flags=()
   if [[ -n "${MCP_CONFIG}" ]]; then
-    mcp_flags+=(--mcp-config "${MCP_CONFIG}")
+    extra_merge_flags+=(--mcp-config "${MCP_CONFIG}")
+  fi
+  if [[ -n "${SYSTEM_PROMPT}" ]]; then
+    extra_merge_flags+=(--system-prompt "${SYSTEM_PROMPT}")
   fi
 
   # dontAsk + allowedTools: only Write tool needed for merge output.
@@ -583,7 +608,7 @@ Rules:
       --setting-sources project,local \
       --disable-slash-commands \
       --strict-mcp-config \
-      "${mcp_flags[@]}" \
+      "${extra_merge_flags[@]}" \
       >"${logfile}" 2>&1) || true
   # || true: prevent set -e from killing the script on failure.
   # We validate the output file below instead.

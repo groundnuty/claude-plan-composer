@@ -14,6 +14,11 @@ work_dir: ""
 # Gives Claude access to external knowledge during merge (e.g., verify against docs).
 mcp_config: ""
 
+# System prompt for merge sessions (like CLAUDE.md for headless agents).
+# Passed via --system-prompt. Can be inline text or a file path (relative to
+# script directory or absolute). File contents are read at launch time.
+system_prompt: ""
+
 # Short description of what these plans are about.
 # Used in the intro prompt to give Claude context.
 project_description: "a software project (customize in merge-config.yaml)"
