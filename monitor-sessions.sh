@@ -576,25 +576,274 @@ print(f"{C.DIM}{now} — {len(sessions)} session(s) running{C.RESET}")
 PYEOF
 }
 
+# ─── Summary mode ─────────────────────────────────────────────────────────
+# Parse stream-json logs and output files from a completed (or in-progress)
+# run directory. Shows per-stage pipeline summary.
+
+render_summary() {
+  local run_dir="$1"
+  python3 - "${run_dir}" <<'PYEOF'
+import json, os, subprocess, re, time, glob, sys
+
+run_dir = sys.argv[1]
+
+# ── Colors ──────────────────────────────────────────────────────────────
+class C:
+    RED    = "\033[0;31m"
+    GREEN  = "\033[0;32m"
+    YELLOW = "\033[0;33m"
+    CYAN   = "\033[0;36m"
+    DIM    = "\033[2m"
+    BOLD   = "\033[1m"
+    RESET  = "\033[0m"
+
+def human_size(b):
+    if b > 1_048_576: return f"{b/1_048_576:.1f}MB"
+    if b > 1024: return f"{b/1024:.1f}KB"
+    return f"{b}B"
+
+def status_colored(status):
+    colors = {
+        "done": C.GREEN, "running": C.CYAN,
+        "failed": C.RED, "not started": C.DIM, "not run": C.DIM,
+    }
+    c = colors.get(status, C.DIM)
+    return f"{c}{status}{C.RESET}"
+
+def file_info(path):
+    """Return (exists, size) for a file path."""
+    if os.path.exists(path):
+        return True, os.path.getsize(path)
+    return False, 0
+
+# ── Stream-JSON parser ──────────────────────────────────────────────────
+
+def parse_stream_json(log_path):
+    """Parse NDJSON log. Returns dict with turns, tools, breakdown, size."""
+    turns = 0
+    tool_counts = {}
+    size = os.path.getsize(log_path)
+    valid_json = 0
+
+    try:
+        with open(log_path, "r") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                    valid_json += 1
+                    if d.get("type") == "assistant":
+                        turns += 1
+                        for c in d.get("message", {}).get("content", []):
+                            if isinstance(c, dict) and c.get("type") == "tool_use":
+                                name = c.get("name", "?")
+                                tool_counts[name] = tool_counts.get(name, 0) + 1
+                except (json.JSONDecodeError, ValueError):
+                    pass
+    except Exception:
+        pass
+
+    if valid_json == 0:
+        return None  # not a valid NDJSON file
+
+    total_tools = sum(tool_counts.values())
+    breakdown = ",".join(
+        f"{name}({count})"
+        for name, count in sorted(tool_counts.items(), key=lambda x: -x[1])
+    )
+
+    return {
+        "turns": turns, "tools": total_tools,
+        "breakdown": breakdown or "none", "size": size,
+    }
+
+# ── Status detection ────────────────────────────────────────────────────
+
+def _has_running_process(match_text):
+    """Check if any running claude -p process matches the given text."""
+    try:
+        ps_out = subprocess.check_output(
+            ["ps", "-ww", "-eo", "args"], text=True
+        )
+        for line in ps_out.split("\n"):
+            if "claude -p" in line and match_text in line:
+                return True
+    except Exception:
+        pass
+    return False
+
+def detect_status(log_path, output_path, min_output=1000):
+    """Detect status: done | running | failed | not started."""
+    if not os.path.exists(log_path):
+        return "not started"
+
+    log_mtime = os.path.getmtime(log_path)
+    is_recent = (time.time() - log_mtime) < 120
+
+    # Check for running process matching this log's variant
+    log_name = os.path.basename(log_path)
+    has_process = _has_running_process(log_name.replace(".log", ""))
+
+    if has_process or is_recent:
+        if output_path and os.path.exists(output_path):
+            out_size = os.path.getsize(output_path)
+            if out_size >= min_output:
+                return "done"
+        return "running"
+
+    if output_path and os.path.exists(output_path):
+        out_size = os.path.getsize(output_path)
+        if out_size >= min_output:
+            return "done"
+        return "failed"
+
+    return "failed"
+
+# ── Scan run directory ──────────────────────────────────────────────────
+
+# GENERATE stage
+gen_variants = []
+for log_path in sorted(glob.glob(os.path.join(run_dir, "plan-*.log"))):
+    fname = os.path.basename(log_path)
+    variant = fname[5:-4]  # plan-{variant}.log
+    md_path = os.path.join(run_dir, f"plan-{variant}.md")
+    parsed = parse_stream_json(log_path)
+    status = detect_status(log_path, md_path, min_output=5000)
+    md_exists, md_size = file_info(md_path)
+    gen_variants.append({
+        "variant": variant, "status": status,
+        "log": parsed, "md_size": md_size if md_exists else 0,
+    })
+
+# EVALUATE stage
+eval_md_exists, eval_md_size = file_info(os.path.join(run_dir, "evaluation.md"))
+eval_json_exists, eval_json_size = file_info(os.path.join(run_dir, "evaluation.json"))
+
+# MERGE stage
+merge_log_path = os.path.join(run_dir, "merge.log")
+merge_md_path = os.path.join(run_dir, "merged-plan.md")
+merge_parsed = parse_stream_json(merge_log_path) if os.path.exists(merge_log_path) else None
+merge_status = detect_status(merge_log_path, merge_md_path)
+merge_md_exists, merge_md_size = file_info(merge_md_path)
+
+# VERIFY stage
+report_exists, report_size = file_info(os.path.join(run_dir, "verification-report.md"))
+premortem_exists, premortem_size = file_info(os.path.join(run_dir, "pre-mortem.md"))
+
+# ── Render ──────────────────────────────────────────────────────────────
+
+print()
+print(f"{C.BOLD}Pipeline Summary:{C.RESET} {run_dir}")
+
+# -- GENERATE --
+gen_count = len(gen_variants)
+gen_done = sum(1 for v in gen_variants if v["status"] == "done")
+gen_running = sum(1 for v in gen_variants if v["status"] == "running")
+print()
+label = f"GENERATE ({gen_count} variant{'s' if gen_count != 1 else ''})"
+print(f"{C.BOLD}── {label} {'─' * max(1, 62 - len(label))}{C.RESET}")
+if gen_variants:
+    print(f"  {'Variant':<18} {'Status':<12} {'Turns':>5} {'Tools':>5}  {'Breakdown':<30} {'Log':>8} {'Plan':>8}")
+    for v in gen_variants:
+        log = v["log"]
+        turns = str(log["turns"]) if log else "—"
+        tools = str(log["tools"]) if log else "—"
+        bd = (log["breakdown"][:30] if log else "—")
+        log_sz = human_size(log["size"]) if log else "—"
+        plan_sz = human_size(v["md_size"]) if v["md_size"] > 0 else "—"
+        st = status_colored(v["status"])
+        print(f"  {v['variant']:<18} {st:<21} {turns:>5} {tools:>5}  {bd:<30} {log_sz:>8} {plan_sz:>8}")
+else:
+    print(f"  {C.DIM}No plan logs found{C.RESET}")
+
+# -- EVALUATE --
+print()
+print(f"{C.BOLD}── EVALUATE {'─' * 53}{C.RESET}")
+if eval_md_exists:
+    print(f"  evaluation.md     {human_size(eval_md_size):>8}   {status_colored('done')}")
+else:
+    print(f"  evaluation.md     {'—':>8}   {status_colored('not run')}")
+if eval_json_exists:
+    print(f"  evaluation.json   {human_size(eval_json_size):>8}   {status_colored('done')}")
+
+# -- MERGE --
+print()
+print(f"{C.BOLD}── MERGE {'─' * 56}{C.RESET}")
+if merge_parsed:
+    print(f"  {'Status':<12} {'Turns':>5} {'Tools':>5}  {'Breakdown':<30} {'Log':>8} {'Plan':>8}")
+    bd = merge_parsed["breakdown"][:30]
+    log_sz = human_size(merge_parsed["size"])
+    plan_sz = human_size(merge_md_size) if merge_md_exists else "—"
+    st = status_colored(merge_status)
+    print(f"  {st:<21} {merge_parsed['turns']:>5} {merge_parsed['tools']:>5}  {bd:<30} {log_sz:>8} {plan_sz:>8}")
+elif merge_status == "not started":
+    print(f"  {status_colored('not started')}")
+else:
+    print(f"  {status_colored(merge_status)}")
+
+# -- VERIFY --
+print()
+print(f"{C.BOLD}── VERIFY {'─' * 55}{C.RESET}")
+if report_exists:
+    print(f"  verification-report.md   {human_size(report_size):>8}   {status_colored('done')}")
+else:
+    print(f"  verification-report.md   {'—':>8}   {status_colored('not run')}")
+if premortem_exists:
+    print(f"  pre-mortem.md            {human_size(premortem_size):>8}   {status_colored('done')}")
+else:
+    print(f"  pre-mortem.md            {'—':>8}   {status_colored('not run')}")
+
+# -- Totals --
+stages_done = sum([
+    gen_done == gen_count and gen_count > 0,
+    eval_md_exists,
+    merge_status == "done",
+    report_exists,
+])
+total_log_bytes = sum(v["log"]["size"] for v in gen_variants if v["log"])
+if merge_parsed:
+    total_log_bytes += merge_parsed["size"]
+
+print()
+print(f"{C.BOLD}── Totals {'─' * 55}{C.RESET}")
+print(f"  Stages: {stages_done}/4 complete")
+if gen_count > 0:
+    parts = []
+    if gen_done > 0:
+        parts.append(f"{gen_done} done")
+    if gen_running > 0:
+        parts.append(f"{gen_running} running")
+    gen_failed = gen_count - gen_done - gen_running
+    if gen_failed > 0:
+        parts.append(f"{gen_failed} failed")
+    print(f"  Plans:  {', '.join(parts)} (of {gen_count})")
+print(f"  Logs:   {human_size(total_log_bytes)} total")
+
+print()
+print(f"{C.DIM}{time.strftime('%H:%M:%S')}{C.RESET}")
+PYEOF
+}
+
 # ─── Entry point ───────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if [[ "${1:-}" = "-h" ]] || [[ "${1:-}" = "--help" ]]; then
   cat <<'HELP'
-Usage: ./monitor-sessions.sh [--watch [INTERVAL]]
+Usage: ./monitor-sessions.sh [--watch [INTERVAL]] [--summary <DIR>]
 
   Real-time dashboard for running Claude Code plan-generation sessions.
   Tracks PIDs, token usage, context window, subagents, and last action.
 
 Flags:
-  --watch [SECS]    Refresh every SECS seconds (default: 15)
-  -h, --help        Show this help
+  --watch [SECS]        Refresh every SECS seconds (default: 15)
+  --summary <DIR>       Pipeline summary for a run directory (post-hoc or live)
+  -h, --help            Show this help
 
 Examples:
-  ./monitor-sessions.sh              # one-shot table
-  ./monitor-sessions.sh --watch      # refresh every 15s
-  ./monitor-sessions.sh --watch 5    # refresh every 5s
+  ./monitor-sessions.sh                                     # one-shot table
+  ./monitor-sessions.sh --watch                             # refresh every 15s
+  ./monitor-sessions.sh --watch 5                           # refresh every 5s
+  ./monitor-sessions.sh --summary generated-plans/x/latest  # pipeline summary
 HELP
   exit 0
 fi
@@ -603,7 +852,16 @@ fi
 source "${SCRIPT_DIR}/lib/common.sh"
 _preflight_check_python
 
-if [[ "${1:-}" = "--watch" ]]; then
+if [[ "${1:-}" = "--summary" ]]; then
+  run_dir="${2:?Usage: $0 --summary <run-dir>}"
+  if [[ ! -d "${run_dir}" ]]; then
+    echo "ERROR: Directory not found: ${run_dir}"
+    exit 1
+  fi
+  # Resolve symlinks (e.g., .../latest -> .../20260302-102925)
+  run_dir=$(cd "${run_dir}" && pwd)
+  render_summary "${run_dir}"
+elif [[ "${1:-}" = "--watch" ]]; then
   interval="${2:-15}"
   saw_sessions=false
   while true; do

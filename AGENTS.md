@@ -184,6 +184,9 @@ VERIFY_MODEL=haiku ./verify-plan.sh generated-plans/latest
 ./monitor-sessions.sh              # one-shot table
 ./monitor-sessions.sh --watch      # refresh every 15s
 ./monitor-sessions.sh --watch 5    # refresh every 5s (auto-exits when done)
+
+# Pipeline summary (post-hoc or during a run)
+./monitor-sessions.sh --summary generated-plans/<prompt-name>/latest
 ```
 
 ## Output Structure
