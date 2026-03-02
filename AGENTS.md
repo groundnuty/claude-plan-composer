@@ -45,6 +45,7 @@ Variant prompts and additional directories are defined in YAML config files.
 
 ```yaml
 # config.yaml
+model: ""             # default model (default: opus; debug: sonnet). Env MODEL overrides.
 work_dir: ""          # empty = temp dir (no file access); set for codebase plans
 add_dirs: []          # extra dirs beyond work_dir
 mcp_config: ""        # MCP server config JSON — external knowledge sources
@@ -102,6 +103,7 @@ Merge prompts (dimensions, role, output goal) are configured via `merge-config.y
 
 ```yaml
 # merge-config.yaml
+model: ""             # default model (default: opus). Env MODEL overrides.
 work_dir: ""          # empty = temp dir; set for codebase-aware merge
 mcp_config: ""        # MCP server config JSON
 system_prompt: ""     # system prompt for merge agents (file path or inline text)

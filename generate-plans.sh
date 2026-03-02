@@ -193,14 +193,14 @@ ln -sfn "${TIMESTAMP}" "${PLANS_DIR}/${PROMPT_NAME}/latest"
 #   DEBUG=1          → same as --debug
 # Explicit env vars always win: MODEL=opus ./generate-plans.sh --debug ...
 if [[ -n "${DEBUG_MODE}" ]]; then
-  MODEL="${MODEL:-sonnet}"
+  MODEL_DEFAULT="sonnet"
   MAX_TURNS="${MAX_TURNS:-20}"
   TIMEOUT_SECS="${TIMEOUT_SECS:-600}"
   MIN_OUTPUT_BYTES=500
   STAGGER_SECS=0
   DEBUG_VARIANT="${DEBUG_VARIANT:-baseline}"
 else
-  MODEL="${MODEL:-opus}"
+  MODEL_DEFAULT="opus"
   MAX_TURNS="${MAX_TURNS:-80}"
   TIMEOUT_SECS="${TIMEOUT_SECS:-3600}"
   MIN_OUTPUT_BYTES=5000
@@ -276,6 +276,8 @@ else:
     print("CFG_SESSION_SETTINGS=''")
 sp = str(cfg.get('system_prompt') or '').strip()
 print(f'CFG_SYSTEM_PROMPT={shlex.quote(sp)}')
+mdl = str(cfg.get('model') or '').strip()
+print(f'CFG_MODEL={shlex.quote(mdl)}')
 PYEOF
     )"
   else
@@ -306,6 +308,8 @@ else:
     print("CFG_SESSION_SETTINGS=''")
 sp = str(cfg.get('system_prompt') or '').strip()
 print(f'CFG_SYSTEM_PROMPT={shlex.quote(sp)}')
+mdl = str(cfg.get('model') or '').strip()
+print(f'CFG_MODEL={shlex.quote(mdl)}')
 variants = cfg.get('variants') or {'baseline': ''}
 for name, val in variants.items():
     if isinstance(val, dict):
@@ -389,6 +393,10 @@ if [[ -n "${CFG_SYSTEM_PROMPT:-}" ]]; then
   fi
   unset _sp
 fi
+
+# ─── Resolve model ───────────────────────────────────────────────────────
+# Priority: MODEL env var > config model > default (opus/sonnet for debug).
+MODEL="${MODEL:-${CFG_MODEL:-${MODEL_DEFAULT}}}"
 
 # ─── Security warnings ───────────────────────────────────────────────────
 _warn_sensitive_paths "${WORK_DIR}" "${ADD_DIRS[@]}"

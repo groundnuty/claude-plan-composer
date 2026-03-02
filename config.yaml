@@ -5,6 +5,11 @@
 # For personal overrides, create config.local.yaml (gitignored).
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Default model for plan generation sessions.
+# Override per-run: MODEL=sonnet ./generate-plans.sh ...
+# Per-variant model overrides (in variants section) take precedence.
+model: ""
+
 # Working directory for Claude sessions.
 # Claude runs from this directory and can access all files within it.
 # Set to a parent directory containing all repos Claude should access.

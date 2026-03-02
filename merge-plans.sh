@@ -108,7 +108,6 @@ echo ""
 
 # ─── Configuration ─────────────────────────────────────────────────────────
 
-MODEL="${MODEL:-opus}"
 MERGE_MODE="${MERGE_MODE:-agent-teams}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-3600}"
 WORK_DIR_ENV="${WORK_DIR:-}"
@@ -244,6 +243,8 @@ print(f'MCFG_CONSTITUTION={shlex.quote(const_list)}')
 
 sp = str(cfg.get('system_prompt') or '').strip()
 print(f'CFG_SYSTEM_PROMPT={shlex.quote(sp)}')
+mdl = str(cfg.get('model') or '').strip()
+print(f'CFG_MODEL={shlex.quote(mdl)}')
 PYEOF
 )"
 
@@ -291,6 +292,10 @@ if [[ -n "${CFG_SYSTEM_PROMPT:-}" ]]; then
   fi
   unset _sp
 fi
+
+# ─── Resolve model ───────────────────────────────────────────────────────
+# Priority: MODEL env var > config model > default (opus).
+MODEL="${MODEL:-${CFG_MODEL:-opus}}"
 
 # ─── Security warnings ───────────────────────────────────────────────────
 _warn_sensitive_paths "${WORK_DIR}"
