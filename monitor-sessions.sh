@@ -29,7 +29,7 @@ class C:
     BOLD   = "\033[1m"
     RESET  = "\033[0m"
 
-def colored(text, color, width):
+def colored(text, color, width=0):
     """Return colored text padded to exact visible width."""
     visible_len = len(text)
     pad = max(0, width - visible_len)
@@ -583,11 +583,11 @@ PYEOF
 render_summary() {
   local run_dir="$1"
   python3 - "${run_dir}" <<'PYEOF'
-import json, os, subprocess, re, time, glob, sys
+import json, os, subprocess, re, time, glob, sys, datetime
 
 run_dir = sys.argv[1]
 
-# ── Colors ──────────────────────────────────────────────────────────────
+# ── Colors and formatting ──────────────────────────────────────────────
 class C:
     RED    = "\033[0;31m"
     GREEN  = "\033[0;32m"
@@ -597,13 +597,32 @@ class C:
     BOLD   = "\033[1m"
     RESET  = "\033[0m"
 
+HR = "\u2500"  # ─ horizontal rule character
+ARROW = "\u2192"  # → arrow character
+DASH = "\u2014"   # — em dash for empty values
+
 def human_size(b):
     if b > 1_048_576: return f"{b/1_048_576:.1f}MB"
     if b > 1024: return f"{b/1024:.1f}KB"
     return f"{b}B"
 
+def human_tokens(t):
+    if t >= 1_000_000: return f"{t/1_000_000:.1f}M"
+    if t >= 1_000: return f"{t/1_000:.0f}K"
+    return str(t)
+
+_ANSI_RE = re.compile(r'\033\[[^m]*m')
+
 def colored(text, color):
     return f"{color}{text}{C.RESET}"
+
+def pad(s, width, align='>'):
+    """Pad string with ANSI codes to exact visible width."""
+    visible = len(_ANSI_RE.sub('', s))
+    p = max(0, width - visible)
+    if align == '<':
+        return s + ' ' * p
+    return ' ' * p + s
 
 def status_colored(status):
     colors = {
@@ -620,12 +639,51 @@ def file_info(path):
 
 # ── Stream-JSON parser ──────────────────────────────────────────────────
 
+def _format_last_action(content_blocks):
+    """Format last action from assistant message content blocks."""
+    for c in content_blocks:
+        if not isinstance(c, dict):
+            continue
+        if c.get("type") == "tool_use":
+            name = c.get("name", "?")
+            inp = c.get("input", {})
+            if name == "Read":
+                return f"Read({os.path.basename(inp.get('file_path', '?'))})"
+            elif name == "Glob":
+                return f"Glob({inp.get('pattern', '?')})"
+            elif name == "Grep":
+                return f"Grep({inp.get('pattern', '?')[:30]})"
+            elif name == "Bash":
+                return f"Bash({inp.get('command', '?')[:40]})"
+            elif name == "Write":
+                return f"Write({os.path.basename(inp.get('file_path', '?'))})"
+            elif name == "Edit":
+                return f"Edit({os.path.basename(inp.get('file_path', '?'))})"
+            elif name == "WebSearch":
+                return f"WebSearch({inp.get('query', '?')[:35]})"
+            elif name == "Agent":
+                return f"Agent({inp.get('description', '?')[:35]})"
+            return name
+        elif c.get("type") == "text":
+            text = c.get("text", "").replace("\n", " ").strip()
+            if len(text) > 10:
+                return f"\U0001f4ac {text[:50]}"
+    return None
+
 def parse_stream_json(log_path):
-    """Parse NDJSON log. Returns dict with turns, tools, breakdown, size."""
+    """Parse NDJSON log. Returns dict with session, token, and tool data."""
     turns = 0
     tool_counts = {}
     size = os.path.getsize(log_path)
     valid_json = 0
+    session_id = None
+    input_tokens = 0
+    output_tokens = 0
+    cache_create = 0
+    cache_read = 0
+    context_size = 0
+    compactions = 0
+    last_action = None
 
     try:
         with open(log_path, "r") as f:
@@ -633,12 +691,41 @@ def parse_stream_json(log_path):
                 try:
                     d = json.loads(line)
                     valid_json += 1
-                    if d.get("type") == "assistant":
+                    dtype = d.get("type")
+
+                    if dtype == "system":
+                        if d.get("subtype") == "init":
+                            session_id = d.get("session_id", "")
+                        elif d.get("subtype") == "compact_boundary":
+                            compactions += 1
+
+                    elif dtype == "assistant":
+                        msg = d.get("message", {})
+                        content = msg.get("content", [])
                         turns += 1
-                        for c in d.get("message", {}).get("content", []):
+
+                        # Token usage
+                        usage = msg.get("usage", {})
+                        if usage:
+                            inp = usage.get("input_tokens", 0)
+                            out = usage.get("output_tokens", 0)
+                            cc = usage.get("cache_creation_input_tokens", 0)
+                            cr = usage.get("cache_read_input_tokens", 0)
+                            input_tokens += inp
+                            output_tokens += out
+                            cache_create += cc
+                            cache_read += cr
+                            context_size = inp + cc + cr
+
+                        # Tool counts + last action
+                        action = _format_last_action(content)
+                        if action:
+                            last_action = action
+                        for c in content:
                             if isinstance(c, dict) and c.get("type") == "tool_use":
                                 name = c.get("name", "?")
                                 tool_counts[name] = tool_counts.get(name, 0) + 1
+
                 except (json.JSONDecodeError, ValueError):
                     pass
     except Exception:
@@ -648,6 +735,7 @@ def parse_stream_json(log_path):
         return None  # not a valid NDJSON file
 
     total_tools = sum(tool_counts.values())
+    total_tokens = input_tokens + output_tokens + cache_create + cache_read
     breakdown = ",".join(
         f"{name}({count})"
         for name, count in sorted(tool_counts.items(), key=lambda x: -x[1])
@@ -656,49 +744,148 @@ def parse_stream_json(log_path):
     return {
         "turns": turns, "tools": total_tools,
         "breakdown": breakdown or "none", "size": size,
+        "session_id": (session_id or "")[:8],
+        "input_tokens": input_tokens, "output_tokens": output_tokens,
+        "cache_create": cache_create, "cache_read": cache_read,
+        "total_tokens": total_tokens, "context_size": context_size,
+        "compactions": compactions, "last_action": last_action,
     }
 
 # ── Status detection ────────────────────────────────────────────────────
 
-def _has_running_process(match_text):
-    """Check if any running claude -p process matches the given text."""
+def _find_running_processes():
+    """Find all running claude -p processes. Returns {variant: {pid, state, cputime}}."""
+    result = {}
     try:
         ps_out = subprocess.check_output(
-            ["ps", "-ww", "-eo", "args"], text=True
+            ["ps", "-ww", "-eo", "pid,state,cputime,args"], text=True
         )
-        for line in ps_out.split("\n"):
-            if "claude -p" in line and match_text in line:
-                return True
+        for line in ps_out.strip().split("\n")[1:]:
+            parts = line.strip().split(None, 3)
+            if len(parts) < 4:
+                continue
+            pid, state, cputime, args = parts
+            if "claude -p" not in args:
+                continue
+            m = re.search(r'plan-([A-Za-z0-9_-]+)\.(?:md|log)', args)
+            if m:
+                result[m.group(1)] = {"pid": int(pid), "state": state, "cputime": cputime}
+            elif "merge" in args.lower() and ("merged plan" in args or "comparison table" in args):
+                result["merge"] = {"pid": int(pid), "state": state, "cputime": cputime}
     except Exception:
         pass
-    return False
+    return result
 
-def detect_status(log_path, output_path, min_output=1000):
-    """Detect status: done | running | failed | not started."""
+# Call once at start — shared by all detect_status calls
+_running_procs = _find_running_processes()
+
+def _state_colored(state):
+    """Color process state: green=running, cyan=sleeping, red=stopped/zombie."""
+    if not state:
+        return colored(DASH, C.DIM)
+    s0 = state[0]
+    if s0 == "R":
+        return colored(state, C.GREEN)
+    elif s0 in ("S", "I"):
+        return colored(state, C.CYAN)
+    elif s0 in ("T", "Z", "U"):
+        return colored(state, C.RED + C.BOLD)
+    return colored(state, C.YELLOW)
+
+def detect_status(log_path, output_path, variant_key, min_output=1000):
+    """Detect status and process info: (status, proc_info|None)."""
     if not os.path.exists(log_path):
-        return "not started"
+        return "not started", None
 
     log_mtime = os.path.getmtime(log_path)
     is_recent = (time.time() - log_mtime) < 120
 
-    # Check for running process matching this log's variant
-    log_name = os.path.basename(log_path)
-    has_process = _has_running_process(log_name.replace(".log", ""))
+    proc = _running_procs.get(variant_key)
 
-    if has_process or is_recent:
+    if proc or is_recent:
         if output_path and os.path.exists(output_path):
             out_size = os.path.getsize(output_path)
             if out_size >= min_output:
-                return "done"
-        return "running"
+                return "done", proc
+        return "running", proc
 
     if output_path and os.path.exists(output_path):
         out_size = os.path.getsize(output_path)
         if out_size >= min_output:
-            return "done"
-        return "failed"
+            return "done", None
+        return "failed", None
 
-    return "failed"
+    return "failed", None
+
+def _find_agents_from_jsonl(session_id):
+    """Look up JSONL transcript by session_id, extract agent running/total counts."""
+    if not session_id:
+        return 0, 0
+    pattern = os.path.expanduser(f"~/.claude/projects/*/{session_id}*.jsonl")
+    paths = glob.glob(pattern)
+    if not paths:
+        return 0, 0
+    jsonl_path = paths[0]
+    agent_last_seen = {}
+    try:
+        fsize = os.path.getsize(jsonl_path)
+        with open(jsonl_path, "r") as f:
+            f.seek(max(0, fsize - 200_000))
+            for raw in f:
+                try:
+                    d = json.loads(raw)
+                    aid = d.get("agentId")
+                    if aid and d.get("isSidechain"):
+                        ts = d.get("timestamp", "")
+                        if ts > agent_last_seen.get(aid, ""):
+                            agent_last_seen[aid] = ts
+                except (json.JSONDecodeError, ValueError):
+                    pass
+    except Exception:
+        pass
+    agents_total = len(agent_last_seen)
+    agents_running = 0
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    for ts in agent_last_seen.values():
+        try:
+            last = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if (now_utc - last).total_seconds() < 120:
+                agents_running += 1
+        except Exception:
+            pass
+    return agents_running, agents_total
+
+SNAPSHOT = "/tmp/claude-monitor-summary-sizes.json"
+
+def _load_snapshot():
+    try:
+        with open(SNAPSHOT) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _save_snapshot(sizes):
+    try:
+        with open(SNAPSHOT, "w") as f:
+            json.dump(sizes, f)
+    except Exception:
+        pass
+
+_prev_sizes = _load_snapshot()
+_new_sizes = {}
+
+def _activity_str(key, current_size):
+    """Track activity: new/growing/idle based on size snapshot."""
+    _new_sizes[key] = current_size
+    prev = _prev_sizes.get(key, 0)
+    if prev == 0:
+        return colored("new", C.CYAN)
+    elif current_size > prev:
+        delta = current_size - prev
+        return colored(f"+{human_size(delta)}", C.GREEN)
+    elif current_size == prev and current_size > 0:
+        return colored("idle", C.YELLOW)
+    return colored(DASH, C.DIM)
 
 # ── Scan run directory ──────────────────────────────────────────────────
 
@@ -709,11 +896,17 @@ for log_path in sorted(glob.glob(os.path.join(run_dir, "plan-*.log"))):
     variant = fname[5:-4]  # plan-{variant}.log
     md_path = os.path.join(run_dir, f"plan-{variant}.md")
     parsed = parse_stream_json(log_path)
-    status = detect_status(log_path, md_path, min_output=5000)
+    status, proc = detect_status(log_path, md_path, variant, min_output=5000)
     md_exists, md_size = file_info(md_path)
+    # Agent tracking via JSONL transcript
+    full_sid = ""
+    if parsed and parsed.get("session_id"):
+        full_sid = parsed["session_id"]
+    agents_r, agents_t = _find_agents_from_jsonl(full_sid)
     gen_variants.append({
-        "variant": variant, "status": status,
+        "variant": variant, "status": status, "proc": proc,
         "log": parsed, "md_size": md_size if md_exists else 0,
+        "agents_running": agents_r, "agents_total": agents_t,
     })
 
 # EVALUATE stage
@@ -724,10 +917,13 @@ eval_json_exists, eval_json_size = file_info(os.path.join(run_dir, "evaluation.j
 merge_log_path = os.path.join(run_dir, "merge.log")
 merge_md_path = os.path.join(run_dir, "merged-plan.md")
 merge_parsed = parse_stream_json(merge_log_path) if os.path.exists(merge_log_path) else None
-merge_status = detect_status(merge_log_path, merge_md_path)
+merge_status, merge_proc = detect_status(merge_log_path, merge_md_path, "merge")
 merge_md_exists, merge_md_size = file_info(merge_md_path)
 if merge_status == "running":
     any_running = True
+merge_agents_r, merge_agents_t = 0, 0
+if merge_parsed and merge_parsed.get("session_id"):
+    merge_agents_r, merge_agents_t = _find_agents_from_jsonl(merge_parsed["session_id"])
 
 # VERIFY stage
 report_exists, report_size = file_info(os.path.join(run_dir, "verification-report.md"))
@@ -754,6 +950,40 @@ any_running = False
 print(f"{C.BOLD}Pipeline Summary:{C.RESET} {run_dir}")
 print(f"  Last modified: {age_str}")
 
+def _render_detail_rows(log, md_size):
+    """Print detail rows (row 2: files+breakdown, row 3: last action)."""
+    if not log:
+        return
+    parts = []
+    parts.append(f"Log: {human_size(log['size'])}")
+    if md_size > 0:
+        parts.append(f"Plan: {human_size(md_size)}")
+    if log["breakdown"] != "none":
+        parts.append(log["breakdown"][:40])
+    print(f"  {C.DIM}{'':>18} {' '.join(parts)}{C.RESET}")
+    if log.get("last_action"):
+        print(f"  {C.DIM}{'':>18} \u2514\u2500 {log['last_action'][:60]}{C.RESET}")
+
+def _ctx_str(log):
+    """Format context size with percentage and color."""
+    ctx = log.get("context_size", 0) if log else 0
+    if ctx <= 0:
+        return colored("\u2014", C.DIM)
+    pct = int(ctx / 2000)  # percentage of 200K
+    s = f"{human_tokens(ctx)} {pct}%"
+    if ctx > 160_000:
+        return colored(s, C.RED)
+    elif ctx > 100_000:
+        return colored(s, C.YELLOW)
+    return colored(s, C.DIM)
+
+def _compact_str(log):
+    """Format compaction count."""
+    n = log.get("compactions", 0) if log else 0
+    if n > 0:
+        return colored(str(n), C.RED)
+    return colored("\u2014", C.DIM)
+
 # -- GENERATE --
 gen_count = len(gen_variants)
 gen_done = sum(1 for v in gen_variants if v["status"] == "done")
@@ -762,41 +992,80 @@ if gen_running > 0:
     any_running = True
 print()
 label = f"GENERATE ({gen_count} variant{'s' if gen_count != 1 else ''})"
-print(f"{C.BOLD}── {label} {'─' * max(1, 62 - len(label))}{C.RESET}")
+print(f"{C.BOLD}{HR}{HR} {label} {HR * max(1, 62 - len(label))}{C.RESET}")
 if gen_variants:
-    print(f"  {'Variant':<18} {'Status':<12} {'Turns':>5} {'Tools':>5}  {'Breakdown':<30} {'Log':>8} {'Plan':>8}")
+    print(f"  {'Variant':<18} {'Status':<12} {'State':>5} {'PID':>7} {'CPU':>8}"
+          f" {'Session':>10} {'Turns':>5} {'Tools':>5} {'Agents':>6}"
+          f" {'Input':>6} {'Output':>6} {'Cache+':>7} {f'Cache{ARROW}':>7} {'Total':>7}"
+          f" {'Ctx':>8} {'C#':>3} {'Activity':>8}")
     for v in gen_variants:
         log = v["log"]
-        turns = str(log["turns"]) if log else "—"
-        tools = str(log["tools"]) if log else "—"
-        bd = (log["breakdown"][:30] if log else "—")
-        log_sz = human_size(log["size"]) if log else "—"
-        plan_sz = human_size(v["md_size"]) if v["md_size"] > 0 else "—"
+        proc = v["proc"]
+        turns = str(log["turns"]) if log else DASH
+        tools = str(log["tools"]) if log else DASH
         st = status_colored(v["status"])
-        print(f"  {v['variant']:<18} {st:<21} {turns:>5} {tools:>5}  {bd:<30} {log_sz:>8} {plan_sz:>8}")
+        state_s = _state_colored(proc["state"]) if proc else colored(DASH, C.DIM)
+        pid_s = str(proc["pid"]) if proc else DASH
+        cpu_s = proc["cputime"] if proc else DASH
+        sid = log["session_id"] if log and log.get("session_id") else DASH
+        ar, at = v["agents_running"], v["agents_total"]
+        agents_s = f"{ar}/{at}" if at > 0 else DASH
+        t_in = human_tokens(log["input_tokens"]) if log and log["input_tokens"] else DASH
+        t_out = human_tokens(log["output_tokens"]) if log and log["output_tokens"] else DASH
+        t_cc = human_tokens(log["cache_create"]) if log and log["cache_create"] else DASH
+        t_cr = human_tokens(log["cache_read"]) if log and log["cache_read"] else DASH
+        t_tot = human_tokens(log["total_tokens"]) if log and log["total_tokens"] else DASH
+        ctx = _ctx_str(log)
+        comp = _compact_str(log)
+        log_size = log["size"] if log else 0
+        activity = _activity_str(v["variant"], log_size)
+        print(f"  {v['variant']:<18} {pad(st, 12, '<')} {pad(state_s, 5)} {pid_s:>7} {cpu_s:>8}"
+              f" {sid:>10} {turns:>5} {tools:>5} {agents_s:>6}"
+              f" {t_in:>6} {t_out:>6} {t_cc:>7} {t_cr:>7} {t_tot:>7}"
+              f" {pad(ctx, 8)} {pad(comp, 3)} {pad(activity, 8)}")
+        _render_detail_rows(log, v["md_size"])
 else:
     print(f"  {C.DIM}No plan logs found{C.RESET}")
 
 # -- EVALUATE --
 print()
-print(f"{C.BOLD}── EVALUATE {'─' * 53}{C.RESET}")
+print(f"{C.BOLD}{HR}{HR} EVALUATE {HR * 53}{C.RESET}")
 if eval_md_exists:
     print(f"  evaluation.md     {human_size(eval_md_size):>8}   {status_colored('done')}")
 else:
-    print(f"  evaluation.md     {'—':>8}   {status_colored('not run')}")
+    print(f"  evaluation.md     {DASH:>8}   {status_colored('not run')}")
 if eval_json_exists:
     print(f"  evaluation.json   {human_size(eval_json_size):>8}   {status_colored('done')}")
 
 # -- MERGE --
 print()
-print(f"{C.BOLD}── MERGE {'─' * 56}{C.RESET}")
+print(f"{C.BOLD}{HR}{HR} MERGE {HR * 56}{C.RESET}")
 if merge_parsed:
-    print(f"  {'Status':<12} {'Turns':>5} {'Tools':>5}  {'Breakdown':<30} {'Log':>8} {'Plan':>8}")
-    bd = merge_parsed["breakdown"][:30]
-    log_sz = human_size(merge_parsed["size"])
-    plan_sz = human_size(merge_md_size) if merge_md_exists else "—"
+    print(f"  {'Status':<12} {'State':>5} {'PID':>7} {'CPU':>8}"
+          f" {'Session':>10} {'Turns':>5} {'Tools':>5} {'Agents':>6}"
+          f" {'Input':>6} {'Output':>6} {'Cache+':>7} {f'Cache{ARROW}':>7} {'Total':>7}"
+          f" {'Ctx':>8} {'C#':>3} {'Activity':>8}")
     st = status_colored(merge_status)
-    print(f"  {st:<21} {merge_parsed['turns']:>5} {merge_parsed['tools']:>5}  {bd:<30} {log_sz:>8} {plan_sz:>8}")
+    state_s = _state_colored(merge_proc["state"]) if merge_proc else colored(DASH, C.DIM)
+    pid_s = str(merge_proc["pid"]) if merge_proc else DASH
+    cpu_s = merge_proc["cputime"] if merge_proc else DASH
+    sid = merge_parsed["session_id"] if merge_parsed.get("session_id") else DASH
+    mar, mat = merge_agents_r, merge_agents_t
+    agents_s = f"{mar}/{mat}" if mat > 0 else DASH
+    t_in = human_tokens(merge_parsed["input_tokens"]) if merge_parsed["input_tokens"] else DASH
+    t_out = human_tokens(merge_parsed["output_tokens"]) if merge_parsed["output_tokens"] else DASH
+    t_cc = human_tokens(merge_parsed["cache_create"]) if merge_parsed["cache_create"] else DASH
+    t_cr = human_tokens(merge_parsed["cache_read"]) if merge_parsed["cache_read"] else DASH
+    t_tot = human_tokens(merge_parsed["total_tokens"]) if merge_parsed["total_tokens"] else DASH
+    ctx = _ctx_str(merge_parsed)
+    comp = _compact_str(merge_parsed)
+    m_log_size = merge_parsed["size"] if merge_parsed else 0
+    m_activity = _activity_str("merge", m_log_size)
+    print(f"  {pad(st, 12, '<')} {pad(state_s, 5)} {pid_s:>7} {cpu_s:>8}"
+          f" {sid:>10} {merge_parsed['turns']:>5} {merge_parsed['tools']:>5} {agents_s:>6}"
+          f" {t_in:>6} {t_out:>6} {t_cc:>7} {t_cr:>7} {t_tot:>7}"
+          f" {pad(ctx, 8)} {pad(comp, 3)} {pad(m_activity, 8)}")
+    _render_detail_rows(merge_parsed, merge_md_size if merge_md_exists else 0)
 elif merge_status == "not started":
     print(f"  {status_colored('not started')}")
 else:
@@ -804,15 +1073,15 @@ else:
 
 # -- VERIFY --
 print()
-print(f"{C.BOLD}── VERIFY {'─' * 55}{C.RESET}")
+print(f"{C.BOLD}{HR}{HR} VERIFY {HR * 55}{C.RESET}")
 if report_exists:
     print(f"  verification-report.md   {human_size(report_size):>8}   {status_colored('done')}")
 else:
-    print(f"  verification-report.md   {'—':>8}   {status_colored('not run')}")
+    print(f"  verification-report.md   {DASH:>8}   {status_colored('not run')}")
 if premortem_exists:
     print(f"  pre-mortem.md            {human_size(premortem_size):>8}   {status_colored('done')}")
 else:
-    print(f"  pre-mortem.md            {'—':>8}   {status_colored('not run')}")
+    print(f"  pre-mortem.md            {DASH:>8}   {status_colored('not run')}")
 
 # -- Totals --
 stages_done = sum([
@@ -825,12 +1094,22 @@ total_log_bytes = sum(v["log"]["size"] for v in gen_variants if v["log"])
 if merge_parsed:
     total_log_bytes += merge_parsed["size"]
 
+# Aggregate token totals
+all_logs = [v["log"] for v in gen_variants if v["log"]]
+if merge_parsed:
+    all_logs.append(merge_parsed)
+tot_input = sum(l["input_tokens"] for l in all_logs)
+tot_output = sum(l["output_tokens"] for l in all_logs)
+tot_cc = sum(l["cache_create"] for l in all_logs)
+tot_cr = sum(l["cache_read"] for l in all_logs)
+tot_all = tot_input + tot_output + tot_cc + tot_cr
+
 print()
-print(f"{C.BOLD}── Totals {'─' * 55}{C.RESET}")
+print(f"{C.BOLD}{HR}{HR} Totals {HR * 55}{C.RESET}")
 status_label = colored("running", C.CYAN) if any_running else (
     colored("complete", C.GREEN) if stages_done == 4 else colored("incomplete", C.YELLOW)
 )
-print(f"  Status: {status_label} — {stages_done}/4 stages done")
+print(f"  Status: {status_label} \u2014 {stages_done}/4 stages done")
 if gen_count > 0:
     parts = []
     if gen_done > 0:
@@ -842,6 +1121,12 @@ if gen_count > 0:
         parts.append(f"{gen_failed} failed")
     print(f"  Plans:  {', '.join(parts)} (of {gen_count})")
 print(f"  Logs:   {human_size(total_log_bytes)} total")
+if tot_all > 0:
+    print(f"  Tokens: {human_tokens(tot_input)} input, {human_tokens(tot_output)} output,"
+          f" {human_tokens(tot_cc)} cache+, {human_tokens(tot_cr)} cache\u2192"
+          f" ({human_tokens(tot_all)} total)")
+
+_save_snapshot(_new_sizes)
 
 print()
 print(f"{C.DIM}{time.strftime('%H:%M:%S')}{C.RESET}")

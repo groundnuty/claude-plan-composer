@@ -184,6 +184,31 @@ teardown() {
 
 # ─── Config validation ────────────────────────────────────────────────────
 
+@test "all claude invocations use --strict-mcp-config" {
+  # Prevents user MCP servers from loading in headless sessions.
+  run bash -c "
+    for f in evaluate-plans.sh merge-plans.sh verify-plan.sh; do
+      count_invocations=\$(grep -v '^\s*#' \"\${PROJECT_ROOT}/\${f}\" | grep -c 'claude -p')
+      count_strict=\$(grep -v '^\s*#' \"\${PROJECT_ROOT}/\${f}\" | grep -c 'strict-mcp-config')
+      if [[ \"\${count_invocations}\" -ne \"\${count_strict}\" ]]; then
+        echo \"FAIL: \${f} has \${count_invocations} claude -p calls but \${count_strict} --strict-mcp-config\"
+        exit 1
+      fi
+    done
+    echo 'OK'
+  "
+  assert_success
+  assert_output "OK"
+}
+
+@test "generate-plans.sh uses configurable strict_mcp via _build_extra_flags" {
+  # generate-plans.sh uses _build_extra_flags which conditionally adds --strict-mcp-config.
+  # Verify the function exists and references STRICT_MCP.
+  run bash -c "grep -c 'STRICT_MCP' '${PROJECT_ROOT}/generate-plans.sh'"
+  assert_success
+  [[ "${output}" -ge 2 ]]
+}
+
 @test "sensitive path warning function exists in lib/common.sh" {
   run bash -c "grep -c '_warn_sensitive_paths' '${PROJECT_ROOT}/lib/common.sh'"
   assert_success

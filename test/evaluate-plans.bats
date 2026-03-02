@@ -11,6 +11,21 @@ teardown() {
   _common_teardown
 }
 
+# ─── Help flag ────────────────────────────────────────────────────────────
+
+@test "evaluate: --help prints usage and exits 0" {
+  run "${PROJECT_ROOT}/evaluate-plans.sh" --help
+  assert_success
+  assert_output --partial "Usage:"
+  assert_output --partial "EVAL_MODEL"
+}
+
+@test "evaluate: -h prints usage and exits 0" {
+  run "${PROJECT_ROOT}/evaluate-plans.sh" -h
+  assert_success
+  assert_output --partial "Usage:"
+}
+
 # ─── Argument parsing ────────────────────────────────────────────────────
 
 @test "exits with usage when no arguments given" {

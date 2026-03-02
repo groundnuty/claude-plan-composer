@@ -106,10 +106,25 @@ Five bash scripts, a test suite, and a research directory:
 | `merge-plans.sh` | Merges generated plans. Agent Teams debate (default) or headless merge. Supports holistic or pairwise tournament comparison. |
 | `verify-plan.sh` | Post-merge quality gates: consistency, completeness, actionability. Optional `--pre-mortem` failure analysis. |
 | `monitor-sessions.sh` | Real-time dashboard for running sessions — tracks PIDs, token usage, context window, subagents, tool calls, and last action. |
-| `examples/` | Example prompts. `csv-to-json-cli.md` is a technical example also used by the e2e test. |
+| `examples/` | Example prompts: CLI tool, REST migration, docs overhaul. Includes a [sample merged plan](examples/sample-output/merged-plan-excerpt.md). |
 | `test/` | 44 unit tests (bats) + e2e pipeline test. Unit tests are fast and free; e2e calls the Claude API. |
 | `research/` | Analysis documents that informed the design decisions (optimal N, methodology improvements with 50+ references). |
 | `AGENTS.md` | Detailed usage reference for working with this project in Claude Code. |
+
+### Prerequisites
+
+| Dependency | Purpose | Install |
+|---|---|---|
+| [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code/overview) | Runs plan-generation sessions | `npm install -g @anthropic-ai/claude-code` |
+| Python 3 + PyYAML | Config file parsing | `pip install pyyaml` |
+| bash 4+ | Associative arrays in scripts | macOS: `brew install bash` |
+| GNU coreutils | `timeout` command | macOS: `brew install coreutils` |
+
+Verify your setup:
+
+```bash
+claude --version && python3 -c "import yaml; print('PyYAML OK')" && echo "bash ${BASH_VERSION}"
+```
 
 ### Quick start
 
@@ -135,6 +150,22 @@ Full pipeline with all variants (Opus, default 4, ~15-25 min, ~$20-60):
 ```
 
 See [AGENTS.md](AGENTS.md) for all options, environment variables, and output structure.
+
+All scripts support `--help` for full usage details (e.g., `./generate-plans.sh --help`).
+
+### What the output looks like
+
+The merged plan starts with a dimension comparison table showing which variant won each category, then synthesizes the best elements into a standalone plan:
+
+```
+| Dimension              | Winner     | Justification                                      |
+|------------------------|------------|-----------------------------------------------------|
+| Approach and strategy  | depth      | Most concrete module breakdown                      |
+| Scope and priorities   | simplicity | Correctly identifies MVP scope; defers schema to v2 |
+| Risk assessment        | breadth    | Only plan to address encoding detection failures    |
+```
+
+See [`examples/sample-output/merged-plan-excerpt.md`](examples/sample-output/merged-plan-excerpt.md) for a full excerpt from a real run.
 
 ### Running e2e tests
 

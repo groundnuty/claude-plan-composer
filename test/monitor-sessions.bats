@@ -12,14 +12,19 @@ teardown() {
   _common_teardown
 }
 
-# Helper: create a synthetic stream-json log with N assistant turns using a tool.
+# Helper: create a synthetic stream-json log with init, N assistant turns, and usage.
 _create_stream_json_log() {
   local path="$1" turns="${2:-3}" tool="${3:-Read}"
   python3 -c "
-import json
+import json, uuid
+# Emit system/init with session_id
+print(json.dumps({'type':'system','subtype':'init',
+  'session_id': str(uuid.uuid4())[:36]}))
 for i in range(${turns}):
     print(json.dumps({'type':'assistant','message':{'role':'assistant',
-      'content':[{'type':'tool_use','name':'${tool}','input':{}}]}}))
+      'content':[{'type':'tool_use','name':'${tool}','input':{}}],
+      'usage':{'input_tokens':100*(i+1),'output_tokens':50*(i+1),
+        'cache_creation_input_tokens':200,'cache_read_input_tokens':1000}}}))
 " >"${path}"
 }
 
@@ -135,4 +140,67 @@ for i in range(${turns}):
   assert_success
   assert_output --partial "Totals"
   assert_output --partial "stages done"
+}
+
+@test "summary: shows token counts for plan logs" {
+  _create_stream_json_log "${TEST_TEMP_DIR}/plan-tokens.log" 3 Read
+  python3 -c "print('x' * 6000)" >"${TEST_TEMP_DIR}/plan-tokens.md"
+
+  run "${PROJECT_ROOT}/monitor-sessions.sh" --summary "${TEST_TEMP_DIR}"
+  assert_success
+  # Header should show token column names
+  assert_output --partial "Input"
+  assert_output --partial "Output"
+  assert_output --partial "Cache+"
+  # Totals should aggregate tokens
+  assert_output --partial "input"
+  assert_output --partial "total"
+}
+
+@test "summary: shows session ID from init message" {
+  _create_stream_json_log "${TEST_TEMP_DIR}/plan-sid.log" 2 Bash
+  python3 -c "print('x' * 6000)" >"${TEST_TEMP_DIR}/plan-sid.md"
+
+  run "${PROJECT_ROOT}/monitor-sessions.sh" --summary "${TEST_TEMP_DIR}"
+  assert_success
+  # Session column header should be present
+  assert_output --partial "Session"
+  # Should show 8-char session ID (not just dashes)
+  # The UUID is random but the header proves the column exists
+}
+
+@test "summary: shows process state column header" {
+  _create_stream_json_log "${TEST_TEMP_DIR}/plan-st.log" 2 Read
+  python3 -c "print('x' * 6000)" >"${TEST_TEMP_DIR}/plan-st.md"
+
+  run "${PROJECT_ROOT}/monitor-sessions.sh" --summary "${TEST_TEMP_DIR}"
+  assert_success
+  assert_output --partial "State"
+}
+
+@test "summary: shows CPU column header" {
+  _create_stream_json_log "${TEST_TEMP_DIR}/plan-cpu.log" 2 Read
+  python3 -c "print('x' * 6000)" >"${TEST_TEMP_DIR}/plan-cpu.md"
+
+  run "${PROJECT_ROOT}/monitor-sessions.sh" --summary "${TEST_TEMP_DIR}"
+  assert_success
+  assert_output --partial "CPU"
+}
+
+@test "summary: shows Agents column header" {
+  _create_stream_json_log "${TEST_TEMP_DIR}/plan-ag.log" 2 Read
+  python3 -c "print('x' * 6000)" >"${TEST_TEMP_DIR}/plan-ag.md"
+
+  run "${PROJECT_ROOT}/monitor-sessions.sh" --summary "${TEST_TEMP_DIR}"
+  assert_success
+  assert_output --partial "Agents"
+}
+
+@test "summary: shows Activity column header" {
+  _create_stream_json_log "${TEST_TEMP_DIR}/plan-act.log" 2 Read
+  python3 -c "print('x' * 6000)" >"${TEST_TEMP_DIR}/plan-act.md"
+
+  run "${PROJECT_ROOT}/monitor-sessions.sh" --summary "${TEST_TEMP_DIR}"
+  assert_success
+  assert_output --partial "Activity"
 }

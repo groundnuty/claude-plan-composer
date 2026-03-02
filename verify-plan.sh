@@ -208,6 +208,7 @@ verify_raw=$(timeout --foreground --verbose "${TIMEOUT_SECS}" \
   --permission-mode dontAsk \
   --setting-sources project,local \
   --disable-slash-commands \
+  --strict-mcp-config \
   2>"${logfile}") || true
 
 if [[ -n "${verify_raw}" ]]; then
@@ -280,6 +281,7 @@ $(cat "${merge_md}")
     --permission-mode dontAsk \
     --setting-sources project,local \
     --disable-slash-commands \
+    --strict-mcp-config \
     2>"${premortem_log}") || true
 
   if [[ -n "${premortem_raw}" ]]; then

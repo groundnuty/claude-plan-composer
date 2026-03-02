@@ -249,7 +249,7 @@ fi
 
 if [[ -n "${CONFIG_FILE}" ]]; then
   if ${MULTI_FILE_MODE}; then
-    # Multi-file: only load work_dir, add_dirs, mcp_config from config.
+    # Multi-file: only load work_dir, add_dirs, mcp_config, strict_mcp from config.
     # shellcheck disable=SC2312 # eval of python output is intentional
     eval "$(
       python3 - "${CONFIG_FILE}" <<'PYEOF'
@@ -263,10 +263,12 @@ print(f'CFG_MCP_CONFIG={shlex.quote(mcp)}')
 dirs = cfg.get('add_dirs') or []
 parts = [shlex.quote(str(d)) for d in dirs]
 print('ADD_DIRS=(' + ' '.join(parts) + ')')
+strict = cfg.get('strict_mcp', False)
+print(f'CFG_STRICT_MCP={"true" if strict else "false"}')
 PYEOF
     )"
   else
-    # Single-file: load work_dir, add_dirs, mcp_config, and variants.
+    # Single-file: load work_dir, add_dirs, mcp_config, strict_mcp, and variants.
     # shellcheck disable=SC2312 # eval of python output is intentional
     eval "$(
       python3 - "${CONFIG_FILE}" <<'PYEOF'
@@ -280,6 +282,8 @@ print(f'CFG_MCP_CONFIG={shlex.quote(mcp)}')
 dirs = cfg.get('add_dirs') or []
 parts = [shlex.quote(str(d)) for d in dirs]
 print('ADD_DIRS=(' + ' '.join(parts) + ')')
+strict = cfg.get('strict_mcp', False)
+print(f'CFG_STRICT_MCP={"true" if strict else "false"}')
 variants = cfg.get('variants') or {'baseline': ''}
 for name, val in variants.items():
     if isinstance(val, dict):
@@ -329,6 +333,9 @@ if [[ -n "${CFG_MCP_CONFIG:-}" ]]; then
     MCP_CONFIG=""
   fi
 fi
+
+# ─── Resolve strict MCP policy ────────────────────────────────────────────
+STRICT_MCP="${CFG_STRICT_MCP:-true}"
 
 # ─── Security warnings ───────────────────────────────────────────────────
 _warn_sensitive_paths "${WORK_DIR}" "${ADD_DIRS[@]}"
@@ -389,6 +396,7 @@ ${BASE_PROMPT}"
     --permission-mode dontAsk \
     --setting-sources project,local \
     --disable-slash-commands \
+    --strict-mcp-config \
     2>/dev/null) || true
 
   # Parse YAML response into variants
@@ -537,7 +545,7 @@ OUTINST
 }
 
 # _build_extra_flags
-# Outputs --add-dir and --mcp-config flags for claude invocations.
+# Outputs --add-dir, --mcp-config, and --strict-mcp-config flags for claude invocations.
 _build_extra_flags() {
   for dir in "${ADD_DIRS[@]}"; do
     if [[ -d "${dir}" ]]; then
@@ -548,6 +556,9 @@ _build_extra_flags() {
   if [[ -n "${MCP_CONFIG}" ]]; then
     echo "--mcp-config"
     echo "${MCP_CONFIG}"
+  fi
+  if [[ "${STRICT_MCP}" = "true" ]]; then
+    echo "--strict-mcp-config"
   fi
 }
 
@@ -768,7 +779,7 @@ else
   echo "Waiting for completion... (${MODEL}: ~15-25 min per session, ${TIMEOUT_SECS}s timeout)"
   echo ""
   echo "  Monitor live:"
-  echo "    tail -f ${RUN_DIR}/plan-*.log | jq -r 'select(.type==\"assistant\") | .message.content[]? | select(.type==\"tool_use\") | .name'"
+  echo "    tail -q -f ${RUN_DIR}/plan-*.log | jq -r 'select(.type==\"assistant\") | .message.content[]? | select(.type==\"tool_use\") | .name'"
   echo ""
 
   _wait_for_variants "${all_variants[@]}"

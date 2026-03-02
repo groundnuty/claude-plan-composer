@@ -35,6 +35,7 @@ The scripts are domain-agnostic. Domain-specific configuration lives in `config.
    - Exit code 1 if any gate fails.
 
 5. **Monitor** (`monitor-sessions.sh`): Real-time dashboard showing running Claude sessions — tracks PID, variant, transcript size, tool calls, subagents, token usage, context window utilization, compactions, and last action. Parses JSONL transcripts from `~/.claude/projects/` and stream-json logs from the run directory. Auto-exits in `--watch` mode when all sessions finish.
+   - `--summary` mode: Unified pipeline view with all live process data — process state (R/S/T/Z with color coding), CPU time, agents via session_id→JSONL cross-reference, activity tracking (new/growing/idle), plus full token metrics per variant. Columns are ANSI-aware aligned via `pad()` helper.
 
 ## Configuration
 
@@ -47,6 +48,7 @@ Variant prompts and additional directories are defined in YAML config files.
 work_dir: ""          # empty = temp dir (no file access); set for codebase plans
 add_dirs: []          # extra dirs beyond work_dir
 mcp_config: ""        # MCP server config JSON — external knowledge sources
+strict_mcp: true      # when true, --strict-mcp-config blocks user MCP servers
 
 # 4 variants recommended (see research/number-of-llms-sessions.md)
 # Simple form: variant_name: "guidance"
@@ -219,7 +221,7 @@ generated-plans/<name>/latest -> <timestamp>   # symlink
 - **Configurable work_dir**: Sessions run from `work_dir` (set in config). If empty or missing, sessions run in a temporary directory with no file access — useful for non-codebase plans. `--add-dir` flags don't propagate to subagents, so CWD must encompass all needed files.
 - **`CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000`**: Overrides any shell default, which may truncate plans.
 - **Permission model**: Sessions use `--permission-mode dontAsk` with explicit `--allowedTools` whitelists (e.g., `"Write"` for merge, `"Read,Write,Bash,Glob,Grep"` for generation). Never uses `--dangerously-skip-permissions`.
-- **Session isolation**: All `claude -p` invocations use `--setting-sources project,local` and `--disable-slash-commands` to prevent loading user-global hooks, plugins, and skills.
+- **Session isolation**: All `claude -p` invocations use `--setting-sources project,local`, `--disable-slash-commands`, and `--strict-mcp-config` (configurable via `strict_mcp` in config.yaml) to prevent loading user-global hooks, plugins, skills, and MCP servers.
 - **`--output-format stream-json`**: File-redirect invocations (generate, merge) use NDJSON streaming output. Variable-capture invocations (lens, eval, verify) use `--output-format text`.
 - **Monitor variant detection**: Uses regex matching on output file path pattern (`plan-{variant}.md`) which works for any variant name. Also parses stream-json log files from the run directory for reliable variant detection via filename.
 
@@ -279,13 +281,16 @@ make fmt       # shfmt format in-place
 make fmt-check # shfmt check without modifying
 ```
 
-Test structure (58 tests across 6 files):
+Test structure (97 tests across 9 files):
 - `test/generate-plans.bats` — flag parsing, multi-file mode, sequential diversity
 - `test/auto-lenses.bats` — lens generation, edge cases
 - `test/verify-plan.bats` — quality gates, pre-mortem
 - `test/evaluate-plans.bats` — convergence check, LLM evaluation
-- `test/merge-plans.bats` — config parsing, weighted dimensions, constitution, comparison_method validation
-- `test/permissions.bats` — security flags, XML boundaries, isolation, output format
+- `test/merge-plans.bats` — merge flag parsing
+- `test/merge-config.bats` — config parsing, weighted dimensions, constitution, comparison_method validation
+- `test/monitor-sessions.bats` — summary mode rendering, column headers, token parsing
+- `test/lib-common.bats` — preflight checks, require_claude
+- `test/permissions.bats` — security flags, XML boundaries, isolation, MCP config, output format
 
 All unit tests are static (grep/awk source files) — no API calls, no `claude` invocations.
 Tests that parse real prompt files set `TIMEOUT_SECS=5` so they fail fast if `claude` runs.

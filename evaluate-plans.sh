@@ -285,6 +285,7 @@ $(cat "${plan_file}")
     --permission-mode dontAsk \
     --setting-sources project,local \
     --disable-slash-commands \
+    --strict-mcp-config \
     2>"${logfile}") || true
 
   # Extract JSON from response (strip any markdown fences or preamble)

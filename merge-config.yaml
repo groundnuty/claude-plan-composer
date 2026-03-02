@@ -16,7 +16,7 @@ mcp_config: ""
 
 # Short description of what these plans are about.
 # Used in the intro prompt to give Claude context.
-project_description: "the project"
+project_description: "a software project (customize in merge-config.yaml)"
 
 # Role the merge LLM assumes (simple mode only).
 role: "an expert analyst"

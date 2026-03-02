@@ -25,6 +25,13 @@ add_dirs: []
 # trained on. Path is relative to script directory or absolute.
 mcp_config: ""
 
+# MCP isolation policy.
+# When true (default), adds --strict-mcp-config to only load servers from
+# mcp_config above, ignoring user-level MCP servers (Scholar Gateway, etc.).
+# When false, user MCP servers are available to all sessions.
+# Override in config.local.yaml to whitelist your preferred MCP servers.
+strict_mcp: true
+
 # Prompt variants — each forces a different perspective on the same base prompt.
 # "baseline" should always have an empty value (no extra guidance).
 #

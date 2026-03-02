@@ -582,6 +582,7 @@ Rules:
       --allowedTools "Write" \
       --setting-sources project,local \
       --disable-slash-commands \
+      --strict-mcp-config \
       "${mcp_flags[@]}" \
       >"${logfile}" 2>&1) || true
   # || true: prevent set -e from killing the script on failure.
