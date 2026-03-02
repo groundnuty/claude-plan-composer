@@ -11,6 +11,21 @@ teardown() {
   _common_teardown
 }
 
+# ─── Help flag ────────────────────────────────────────────────────────────
+
+@test "verify: --help prints usage and exits 0" {
+  run "${PROJECT_ROOT}/verify-plan.sh" --help
+  assert_success
+  assert_output --partial "Usage:"
+  assert_output --partial "VERIFY_MODEL"
+}
+
+@test "verify: -h prints usage and exits 0" {
+  run "${PROJECT_ROOT}/verify-plan.sh" -h
+  assert_success
+  assert_output --partial "Usage:"
+}
+
 # ─── Argument parsing ────────────────────────────────────────────────────
 
 @test "exits with usage when no arguments given" {
@@ -61,8 +76,10 @@ teardown() {
   python3 -c "print('# Plan B\n' + '## Section\nContent.\n' * 100)" \
     >"${TEST_TEMP_DIR}/plans/plan-beta.md"
 
-  # Will fail on claude call but should accept the flag
-  run "${PROJECT_ROOT}/verify-plan.sh" "--pre-mortem" "${TEST_TEMP_DIR}/plans"
+  # Will fail on claude call (times out) but should accept the flag.
+  # Short timeout: we only care about arg parsing, not the claude call.
+  run env TIMEOUT_SECS=5 \
+    "${PROJECT_ROOT}/verify-plan.sh" "--pre-mortem" "${TEST_TEMP_DIR}/plans"
 
   # Should get past argument parsing (won't say "Unknown flag")
   refute_output --partial "Unknown flag"

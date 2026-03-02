@@ -102,16 +102,21 @@ setup() {
 # ─── Merge phase ────────────────────────────────────────────────────────────
 
 @test "merge: produces merged-plan.md" {
-  echo "# Merging plans with MODEL=${MODEL:-haiku}, MERGE_MODE=simple..." >&3
+  echo "# Merging plans with MODEL=${MODEL:-sonnet}, MERGE_MODE=simple..." >&3
 
+  # Run merge directly (not via bats `run`) because `run` creates a pipe context
+  # that causes claude -p to receive SIGTTIN and stop silently.
+  # See research/claude-p-headless-pitfalls.md for details.
   unset CLAUDECODE
-  MODEL="${MODEL:-haiku}" \
+  local merge_exit=0
+  MODEL="${MODEL:-sonnet}" \
     MERGE_MODE=simple \
     MAX_TURNS="${MAX_TURNS:-15}" \
-    TIMEOUT_SECS="${TIMEOUT_SECS:-300}" \
-    run "${PROJECT_ROOT}/merge-plans.sh" "${RUN_DIR}"
-  assert_success
-  assert_file_exists "${RUN_DIR}/merged-plan.md"
+    TIMEOUT_SECS=600 \
+    "${PROJECT_ROOT}/merge-plans.sh" "${RUN_DIR}" || merge_exit=$?
+
+  [[ "${merge_exit}" -eq 0 ]] || fail "merge-plans.sh exited with code ${merge_exit}"
+  [[ -f "${RUN_DIR}/merged-plan.md" ]] || fail "merged-plan.md not created"
 }
 
 @test "merge: merged plan exceeds minimum size" {

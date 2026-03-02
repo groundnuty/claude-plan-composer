@@ -12,6 +12,21 @@ teardown() {
   _common_teardown
 }
 
+# ─── Help flag ────────────────────────────────────────────────────────────
+
+@test "generate: --help prints usage and exits 0" {
+  run "${PROJECT_ROOT}/generate-plans.sh" --help
+  assert_success
+  assert_output --partial "Usage:"
+  assert_output --partial "Environment variables:"
+}
+
+@test "generate: -h prints usage and exits 0" {
+  run "${PROJECT_ROOT}/generate-plans.sh" -h
+  assert_success
+  assert_output --partial "Usage:"
+}
+
 # ─── Argument parsing ───────────────────────────────────────────────────────
 
 @test "exits with usage when no arguments given" {
@@ -65,9 +80,11 @@ teardown() {
 @test "--sequential-diversity is disabled in debug mode with warning" {
   echo "# Test prompt" >"${TEST_TEMP_DIR}/test-prompt.md"
 
-  # Will fail downstream (claude not available), but should warn about
-  # sequential-diversity being disabled, not error on it
-  run "${PROJECT_ROOT}/generate-plans.sh" --debug --sequential-diversity \
+  # Will fail downstream (claude call times out), but should warn about
+  # sequential-diversity being disabled, not error on it.
+  # Short timeout: we only care about the warning, not the claude call.
+  run env TIMEOUT_SECS=5 \
+    "${PROJECT_ROOT}/generate-plans.sh" --debug --sequential-diversity \
     "${TEST_TEMP_DIR}/test-prompt.md"
 
   # Should get past argument parsing and validation
@@ -119,9 +136,10 @@ EOF
   # Create a minimal prompt file
   echo "# Test prompt" >"${TEST_TEMP_DIR}/test-prompt.md"
 
-  # Run from temp dir where no config exists — should warn and use baseline
-  # Use DEBUG mode to avoid actually launching Claude
-  run env CONFIG="/tmp/nonexistent-config-$$.yaml" \
+  # Run from temp dir where no config exists — should warn and use baseline.
+  # Use DEBUG mode to avoid actually launching Claude.
+  # Short timeout: we only care about config fallback, not the claude call.
+  run env CONFIG="/tmp/nonexistent-config-$$.yaml" TIMEOUT_SECS=5 \
     "${PROJECT_ROOT}/generate-plans.sh" --debug "${TEST_TEMP_DIR}/test-prompt.md"
 
   # Will fail trying to parse a nonexistent config, which is expected

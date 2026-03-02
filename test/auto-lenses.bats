@@ -17,9 +17,11 @@ teardown() {
   # Create a dummy prompt file
   echo "# Test prompt" >"${TEST_TEMP_DIR}/prompt.md"
 
-  # --auto-lenses should be accepted (will fail later due to no claude, but
-  # should not fail on argument parsing). Check it gets past the arg parser.
-  run "${PROJECT_ROOT}/generate-plans.sh" "--auto-lenses" "--debug" "${TEST_TEMP_DIR}/prompt.md"
+  # --auto-lenses should be accepted (will fail later when claude times out,
+  # but should not fail on argument parsing). Check it gets past the arg parser.
+  # Short timeout: we only care about arg parsing, not the claude call.
+  run env TIMEOUT_SECS=5 \
+    "${PROJECT_ROOT}/generate-plans.sh" "--auto-lenses" "--debug" "${TEST_TEMP_DIR}/prompt.md"
 
   # Should get past arg parsing — may fail on config loading or claude call,
   # but should NOT say "unknown flag" or fail on usage.

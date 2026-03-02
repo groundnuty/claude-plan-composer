@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Allow nested claude -p calls when running from inside Claude Code.
+unset CLAUDECODE 2>/dev/null || true
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Generate multiple implementation plans using parallel Claude Code sessions.
 #
@@ -67,6 +70,39 @@ SEQUENTIAL_DIVERSITY="${SEQUENTIAL_DIVERSITY:-}"
 args=()
 for arg in "$@"; do
   case "${arg}" in
+    -h | --help)
+      cat <<'HELP'
+Usage: ./generate-plans.sh [FLAGS] <prompt-file>
+       ./generate-plans.sh <prompt-1.md> <prompt-2.md> ...  (multi-file mode)
+
+  Generate multiple implementation plans using parallel Claude Code sessions.
+  Each session receives a different prompt variant to force diverse perspectives.
+
+Flags:
+  --debug[=VARIANT]         Single variant, sonnet model, fast timeout
+  --auto-lenses             LLM-generated task-specific variants
+  --sequential-diversity    Two-wave generation with diversity constraint
+  --context=FILE            Shared context appended to each prompt (multi-file)
+  -h, --help                Show this help
+
+Environment variables:
+  MODEL=opus                Model for plan generation (default: opus, debug: sonnet)
+  MAX_TURNS=80              Max Claude turns per session (default: 80, debug: 20)
+  TIMEOUT_SECS=3600         Session timeout in seconds (default: 3600, debug: 600)
+  CONFIG=config.yaml        Config file path (default: config.local.yaml > config.yaml)
+  WORK_DIR=/path            Working directory for Claude sessions
+  LENS_MODEL=haiku          Model for auto-lens generation
+  LENS_COUNT=4              Number of auto-lenses to generate
+
+Examples:
+  ./generate-plans.sh my-prompt.md                          # all config variants
+  ./generate-plans.sh --debug my-prompt.md                  # quick single-variant test
+  MODEL=sonnet ./generate-plans.sh my-prompt.md             # use sonnet instead of opus
+  ./generate-plans.sh --auto-lenses my-prompt.md            # LLM-generated lenses
+  ./generate-plans.sh --context=shared.md p1.md p2.md p3.md # multi-file with context
+HELP
+      exit 0
+      ;;
     --debug) DEBUG_MODE=1 ;;
     --debug=*)
       DEBUG_MODE=1
@@ -100,8 +136,15 @@ fi
 if [[ ${#args[@]} -eq 0 ]]; then
   echo "Usage: $0 [--debug[=variant]] [--auto-lenses] [--sequential-diversity] <prompt-file>"
   echo "       $0 <prompt-1.md> <prompt-2.md> ...  (multi-file mode)"
+  echo "       $0 --help for full usage"
   exit 1
 fi
+
+# ─── Preflight checks ────────────────────────────────────────────────────
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+_preflight_check
+_require_claude
 
 MULTI_FILE_MODE=false
 if [[ ${#args[@]} -gt 1 ]]; then
@@ -166,8 +209,8 @@ fi
 WORK_DIR_ENV="${WORK_DIR:-}"
 
 # CRITICAL: Override the global CLAUDE_CODE_MAX_OUTPUT_TOKENS unconditionally.
-# Your ~/.zshrc sets it to 6000 — far too low for implementation plans (8K-20K tokens).
-# Must use = not :- because the var IS set (to 6000) in the shell environment.
+# The env may already have a low value (e.g., 6000) — far too low for plans (8K-20K tokens).
+# Must use = not :- because the var IS set in the shell environment.
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
 
 # ─── Load project config (variants + add-dirs) ───────────────────────────
@@ -205,9 +248,10 @@ if [[ -n "${CONFIG_FILE}" ]]; then
   if ${MULTI_FILE_MODE}; then
     # Multi-file: only load work_dir, add_dirs, mcp_config from config.
     # shellcheck disable=SC2312 # eval of python output is intentional
-    eval "$(python3 -c "
-import yaml, shlex
-with open('${CONFIG_FILE}') as f:
+    eval "$(
+      python3 - "${CONFIG_FILE}" <<'PYEOF'
+import yaml, shlex, sys
+with open(sys.argv[1]) as f:
     cfg = yaml.safe_load(f)
 wd = str(cfg.get('work_dir') or '').strip()
 print(f'CFG_WORK_DIR={shlex.quote(wd)}')
@@ -216,13 +260,15 @@ print(f'CFG_MCP_CONFIG={shlex.quote(mcp)}')
 dirs = cfg.get('add_dirs') or []
 parts = [shlex.quote(str(d)) for d in dirs]
 print('ADD_DIRS=(' + ' '.join(parts) + ')')
-")"
+PYEOF
+    )"
   else
     # Single-file: load work_dir, add_dirs, mcp_config, and variants.
     # shellcheck disable=SC2312 # eval of python output is intentional
-    eval "$(python3 -c "
-import yaml, shlex
-with open('${CONFIG_FILE}') as f:
+    eval "$(
+      python3 - "${CONFIG_FILE}" <<'PYEOF'
+import yaml, shlex, sys
+with open(sys.argv[1]) as f:
     cfg = yaml.safe_load(f)
 wd = str(cfg.get('work_dir') or '').strip()
 print(f'CFG_WORK_DIR={shlex.quote(wd)}')
@@ -242,7 +288,8 @@ for name, val in variants.items():
     print(f'VARIANTS[{name}]={shlex.quote(guidance)}')
     if model:
         print(f'VARIANT_MODELS[{name}]={shlex.quote(model)}')
-")"
+PYEOF
+    )"
   fi
 elif ! ${MULTI_FILE_MODE}; then
   echo "Warning: No config.yaml found. Using baseline-only variant."
@@ -279,6 +326,9 @@ if [[ -n "${CFG_MCP_CONFIG:-}" ]]; then
     MCP_CONFIG=""
   fi
 fi
+
+# ─── Security warnings ───────────────────────────────────────────────────
+_warn_sensitive_paths "${WORK_DIR}" "${ADD_DIRS[@]}"
 
 # NOTE: output_instruction is set per-variant inside the loop (needs md_file path)
 
@@ -326,12 +376,16 @@ perspectives:
 The task:
 ${BASE_PROMPT}"
 
-  lens_raw=$(timeout "${LENS_TIMEOUT}" \
+  # dontAsk: pure text completion — no tools needed, auto-deny any unexpected tool use.
+  # Isolation flags prevent loading user hooks, plugins, and skills.
+  lens_raw=$(timeout --foreground --verbose "${LENS_TIMEOUT}" \
     claude -p "${LENS_PROMPT}" \
     --model "${LENS_MODEL}" \
     --output-format text \
     --max-turns 3 \
-    --dangerously-skip-permissions \
+    --permission-mode dontAsk \
+    --setting-sources project,local \
+    --disable-slash-commands \
     2>/dev/null) || true
 
   # Parse YAML response into variants
@@ -527,15 +581,21 @@ _launch_variant() {
   mapfile -t extra_flags < <(_build_extra_flags)
 
   # Run from WORK_DIR so all repos within it are accessible to Claude.
-  # --dangerously-skip-permissions: Required for headless -p mode.
+  # dontAsk + allowedTools: explicit tool whitelist for codebase exploration.
+  # Bash is broad but constrained by native sandbox (if enabled).
+  # Isolation flags prevent loading user hooks, plugins, and skills.
+  # See research/laptop-threat-model.md for the full security analysis.
   (cd "${WORK_DIR}" \
     && CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000 \
-      timeout "${TIMEOUT_SECS}" \
+      timeout --foreground --verbose "${TIMEOUT_SECS}" \
       claude -p "${full_prompt}" \
       --model "${variant_model}" \
       --output-format text \
       --max-turns "${MAX_TURNS}" \
-      --dangerously-skip-permissions \
+      --permission-mode dontAsk \
+      --allowedTools "Read,Glob,Bash,Write,WebFetch,WebSearch" \
+      --setting-sources project,local \
+      --disable-slash-commands \
       "${extra_flags[@]}" \
       >"${logfile}" 2>&1) &
 
