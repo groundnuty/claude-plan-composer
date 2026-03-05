@@ -7,10 +7,11 @@ unset CLAUDECODE 2>/dev/null || true
 # ─────────────────────────────────────────────────────────────────────────────
 # Verify a merged plan against quality gates.
 #
-# Three quality gates:
+# Four quality gates:
 #   Gate 1: CONSISTENCY — internal contradictions in the merged plan
 #   Gate 2: COMPLETENESS — content lost from source plans during merge
 #   Gate 3: ACTIONABILITY — each section has concrete next steps
+#   Gate 4: FACTUAL ACCURACY — citations verified via WebSearch
 #
 # Optionally runs a pre-mortem analysis (--pre-mortem flag).
 #
@@ -40,7 +41,7 @@ while [[ $# -gt 0 ]]; do
 Usage: ./verify-plan.sh [FLAGS] <plans-directory>
 
   Verify a merged plan against quality gates: consistency, completeness,
-  and actionability. Optionally runs pre-mortem failure analysis.
+  actionability, and factual accuracy. Optionally runs pre-mortem failure analysis.
 
 Flags:
   --pre-mortem      Run pre-mortem failure scenario analysis
@@ -123,7 +124,7 @@ echo ""
 
 # ─── Build verification prompt ───────────────────────────────────────────
 
-VERIFY_PROMPT="You are a plan quality reviewer. Verify the merged plan against three quality gates.
+VERIFY_PROMPT="You are a plan quality reviewer. Verify the merged plan against four quality gates.
 
 ## Gate 1: CONSISTENCY
 Check for internal contradictions in the merged plan:
@@ -143,6 +144,14 @@ Check that each section is executable:
 - Are there purely aspirational sections with no actionable guidance?
 - Are recommendations specific enough to act on?
 
+## Gate 4: FACTUAL ACCURACY
+Verify citations and factual claims in the merged plan:
+- For each citation (Author et al., Year patterns), use WebSearch to verify the paper exists
+  and the listed authors are correct.
+- Flag any citation where the authors, title, or year cannot be confirmed.
+- Check key factual claims (tool names, algorithm descriptions) against search results.
+If the plan contains no citations, mark this gate as PASS.
+
 ## Output format
 
 Output ONLY the following markdown structure:
@@ -161,8 +170,12 @@ Output ONLY the following markdown structure:
 **Result: PASS/FAIL**
 [If FAIL, list each non-actionable section]
 
+## Gate 4: FACTUAL ACCURACY
+**Result: PASS/FAIL**
+[If FAIL, list each unverifiable or incorrect citation]
+
 ## Summary
-Gates passed: X/3
+Gates passed: X/4
 Overall: PASS/FAIL
 
 ## Merged plan to verify
@@ -198,14 +211,15 @@ echo "── Quality gates ──"
 logfile="${RUN_DIR}/verify.log"
 report_md="${RUN_DIR}/verification-report.md"
 
-# dontAsk: pure text completion — no tools needed, auto-deny any unexpected tool use.
+# dontAsk + allowedTools: only WebSearch is permitted (for citation verification).
 # Isolation flags prevent loading user hooks, plugins, and skills.
 verify_raw=$(timeout --foreground --verbose "${TIMEOUT_SECS}" \
   claude -p "${VERIFY_PROMPT}" \
   --model "${VERIFY_MODEL}" \
   --output-format text \
-  --max-turns 5 \
+  --max-turns 15 \
   --permission-mode dontAsk \
+  --allowedTools "WebSearch" \
   --setting-sources project,local \
   --disable-slash-commands \
   --strict-mcp-config \
@@ -217,19 +231,28 @@ if [[ -n "${verify_raw}" ]]; then
 
   # Parse results
   gate_failures=0
-  for gate_num in 1 2 3; do
+  for gate_num in 1 2 3 4; do
     gate_name=""
     case ${gate_num} in
       1) gate_name="CONSISTENCY" ;;
       2) gate_name="COMPLETENESS" ;;
       3) gate_name="ACTIONABILITY" ;;
+      4) gate_name="FACTUAL ACCURACY" ;;
       *) gate_name="UNKNOWN" ;;
     esac
 
-    if echo "${verify_raw}" | grep -qi "Gate ${gate_num}.*Result:.*FAIL"; then
+    # Extract gate section (heading to next ## or end) — handles multi-line
+    # output where "Gate N" heading and "Result:" are on separate lines.
+    gate_section=$(echo "${verify_raw}" | awk -v n="${gate_num}" '
+      $0 ~ ("Gate " n) { found=1 }
+      found && /^## / && !($0 ~ ("Gate " n)) { exit }
+      found { print }
+    ')
+
+    if echo "${gate_section}" | grep -qi "Result:.*FAIL"; then
       echo "  ✗ Gate ${gate_num} (${gate_name}): FAIL"
       ((gate_failures++)) || true
-    elif echo "${verify_raw}" | grep -qi "Gate ${gate_num}.*Result:.*PASS"; then
+    elif echo "${gate_section}" | grep -qi "Result:.*PASS"; then
       echo "  ✓ Gate ${gate_num} (${gate_name}): PASS"
     else
       echo "  ? Gate ${gate_num} (${gate_name}): unclear (treating as failure)"

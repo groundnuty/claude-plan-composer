@@ -52,3 +52,22 @@ teardown() {
   assert_failure
   assert_output --partial "Need at least 2 plan files"
 }
+
+# ─── Eval-informed merge ─────────────────────────────────────────────────
+
+@test "merge-plans.sh contains eval summary loading function" {
+  run bash -c "grep -c '_build_eval_summary' '${PROJECT_ROOT}/merge-plans.sh'"
+  assert_success
+  [[ "${output}" -ge 2 ]]  # function definition + call
+}
+
+@test "merge-plans.sh checks for evaluation JSON files" {
+  run bash -c "grep 'evaluation.*json' '${PROJECT_ROOT}/merge-plans.sh'"
+  assert_success
+}
+
+@test "eval summary is injected into merge prompts" {
+  run bash -c "grep -c 'EVAL_SUMMARY' '${PROJECT_ROOT}/merge-plans.sh'"
+  assert_success
+  [[ "${output}" -ge 4 ]]  # function + agent-teams + pairwise + holistic
+}

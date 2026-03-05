@@ -67,6 +67,31 @@ teardown() {
   assert_output --partial "Unknown flag"
 }
 
+# ─── Gate 4: FACTUAL ACCURACY ─────────────────────────────────────────
+
+@test "verify prompt includes Gate 4 FACTUAL ACCURACY" {
+  run bash -c "grep -c 'Gate 4.*FACTUAL ACCURACY' '${PROJECT_ROOT}/verify-plan.sh'"
+  assert_success
+  [[ "${output}" -ge 2 ]]  # prompt template + output format
+}
+
+@test "verify uses --allowedTools WebSearch for citation checking" {
+  run bash -c "
+    grep -A10 'claude -p.*VERIFY_PROMPT' '${PROJECT_ROOT}/verify-plan.sh'
+  "
+  assert_success
+  assert_output --partial "allowedTools"
+  assert_output --partial "WebSearch"
+}
+
+@test "verify gate loop includes gate 4" {
+  run bash -c "grep 'for gate_num in' '${PROJECT_ROOT}/verify-plan.sh'"
+  assert_success
+  assert_output --partial "1 2 3 4"
+}
+
+# ─── Pre-mortem ───────────────────────────────────────────────────────
+
 @test "accepts --pre-mortem flag" {
   mkdir -p "${TEST_TEMP_DIR}/plans"
   python3 -c "print('# Merged\n' + '## Section\nContent.\n' * 100)" \

@@ -307,6 +307,90 @@ _warn_sensitive_paths "${WORK_DIR}"
 
 echo "  Merge config: ${MERGE_CONFIG_FILE:-defaults}"
 
+# ─── Load evaluation summary (optional) ─────────────────────────────────
+# If evaluation JSON exists, parse it into a summary for the merge prompt.
+# This bridges the evaluate → merge information gap so the merge agent knows
+# each plan's per-dimension strengths without rediscovering them.
+EVAL_SUMMARY=""
+_build_eval_summary() {
+  local run_dir="$1"
+  # Find the most recent evaluation JSON (model-suffixed or legacy)
+  local eval_json=""
+  # Find most recent evaluation JSON by modification time
+  eval_json=$(find "${run_dir}" -maxdepth 1 -name 'evaluation-*.json' -print0 2>/dev/null \
+    | xargs -0 ls -t 2>/dev/null | head -1) || true
+  if [[ -z "${eval_json}" ]] && [[ -f "${run_dir}/evaluation.json" ]]; then
+    eval_json="${run_dir}/evaluation.json"
+  fi
+
+  if [[ -z "${eval_json}" ]] || [[ ! -f "${eval_json}" ]]; then
+    return 0
+  fi
+
+  local summary
+  summary=$(python3 -c "
+import sys, json
+
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+
+plans = data.get('plans', [])
+gaps = data.get('gaps', [])
+strengths = data.get('plan_strengths', {})
+
+if not plans:
+    sys.exit(0)
+
+# Detect binary vs likert from schema
+first_dim = plans[0].get('dimensions', [{}])[0] if plans[0].get('dimensions') else {}
+is_binary = 'pass' in first_dim
+
+print('## Pre-merge evaluation summary')
+print()
+print('The following evaluation was performed automatically before this merge.')
+print('Use it to inform which plan to draw from for each dimension.')
+print()
+
+if gaps:
+    print('### Gaps (dimensions no plan covers well)')
+    for g in gaps:
+        print(f'- **{g}**')
+    print()
+
+if strengths:
+    print('### Per-plan strengths')
+    for plan_name, dims in strengths.items():
+        if dims:
+            print(f'- **{plan_name}**: strongest on {\", \".join(dims)}')
+    print()
+
+print('### Per-dimension scores')
+dim_names = [d['name'] for d in plans[0].get('dimensions', [])]
+for di, dim_name in enumerate(dim_names):
+    print(f'**{dim_name}**:')
+    for p in plans:
+        d = p['dimensions'][di] if di < len(p.get('dimensions', [])) else {}
+        name = p.get('name', '?')
+        if is_binary:
+            verdict = 'PASS' if d.get('pass') else 'FAIL'
+            critique = d.get('critique', '')
+            short = (critique[:80] + '...') if len(critique) > 83 else critique
+            print(f'  - {name}: {verdict} — {short}')
+        else:
+            s = d.get('strength', 0)
+            c = 'covered' if d.get('covered') else 'not covered'
+            print(f'  - {name}: {s}/5 ({c})')
+    print()
+" "${eval_json}" 2>/dev/null) || true
+
+  if [[ -n "${summary}" ]]; then
+    EVAL_SUMMARY="${summary}"
+    echo "  Eval summary loaded from: $(basename "${eval_json}")"
+  fi
+}
+
+_build_eval_summary "${RUN_DIR}"
+
 # ─── Agent Teams merge ─────────────────────────────────────────────────────
 
 if [[ "${MERGE_MODE}" = "agent-teams" ]]; then
@@ -340,6 +424,15 @@ PROMPT_HEADER_EOF
 
 EOF
   done
+
+  # Inject evaluation summary if available
+  if [[ -n "${EVAL_SUMMARY}" ]]; then
+    cat >>"${merge_prompt_file}" <<EVAL_SUMMARY_EOF
+
+${EVAL_SUMMARY}
+
+EVAL_SUMMARY_EOF
+  fi
 
   # Use unquoted heredoc so $merge_md and config vars expand
   cat >>"${merge_prompt_file}" <<PROMPT_FOOTER_EOF
@@ -461,7 +554,9 @@ For each pair × dimension, pick a WINNER and give a one-sentence justification.
 Dimensions:
 ${MCFG_DIMENSIONS}
 ${WEIGHT_INSTRUCTIONS}
-
+${EVAL_SUMMARY:+
+${EVAL_SUMMARY}
+}
 Pairs to compare:
 ${pairs_list}
 Output Phase 1 as a structured table:
@@ -516,7 +611,9 @@ For each of the following dimensions, produce a comparison table showing
 each plan's approach, strengths, and weaknesses:
 ${MCFG_DIMENSIONS}
 ${WEIGHT_INSTRUCTIONS}
-
+${EVAL_SUMMARY:+
+${EVAL_SUMMARY}
+}
 For each dimension, classify any disagreements between plans:
 - GENUINE TRADE-OFF: Legitimate alternatives with different strengths.
   Present both options with trade-off analysis in the merged plan.

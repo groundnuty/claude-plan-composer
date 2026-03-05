@@ -105,6 +105,12 @@ perspectives:
   [[ "${result}" == *"LENS_FAILED=1"* ]]
 }
 
+@test "auto-lens prompt includes adversarial perspective instruction" {
+  run bash -c "grep -i 'adversarial' '${PROJECT_ROOT}/generate-plans.sh'"
+  assert_success
+  assert_output --partial "adversarial"
+}
+
 @test "sanitizes variant names to kebab-case" {
   yaml_input="perspectives:
   - name: 'Risk First!'

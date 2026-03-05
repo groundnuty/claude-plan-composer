@@ -13,17 +13,20 @@ The scripts are domain-agnostic. Domain-specific configuration lives in `config.
 1. **Generate** (`generate-plans.sh`): Launches parallel `claude -p` sessions, each with a different prompt. Two modes:
    - **Single-file**: One prompt + variant guidance from `config.yaml` (default: 4 variants).
    - **Multi-file**: Each prompt file is a standalone variant. Supports `--context=shared.md` to append common context to all prompts.
-   - Flags: `--auto-lenses` generates task-specific variant lenses via LLM before launching. `--sequential-diversity` runs variants in two waves — wave 1 generates, wave 2 gets skeleton outlines of wave 1 plans as a diversity constraint.
+   - Flags: `--auto-lenses` generates task-specific variant lenses via LLM before launching (includes at least one adversarial perspective). `--sequential-diversity` runs variants in two waves — wave 1 generates, wave 2 gets skeleton outlines of wave 1 plans as a diversity constraint.
    Each session writes a plan to a file via the Write tool.
 
 2. **Evaluate** (`evaluate-plans.sh`): Pre-merge analysis of generated plans.
-   - **Phase 1** (zero cost): Bash-level convergence check — extracts section headings from each plan, computes pairwise Jaccard similarity, warns about too-similar or too-divergent plans.
-   - **Phase 2** (optional LLM): Coverage matrix, gap detection, per-plan strengths. Uses a cheap model (default: haiku). Produces `evaluation.md` and `evaluation.json`.
+   - **Phase 1** (zero cost): Bash-level convergence check — extracts section headings from each plan, computes pairwise Jaccard similarity. Near-zero overlap is expected for multi-file mode (different analytical lenses).
+   - **Phase 2** (optional LLM): Coverage matrix, gap detection, per-plan strengths. Default model: sonnet. Output files are versioned by model (`evaluation-{model}.md`, `evaluation-{model}.json`) to preserve results across runs.
+   - **Binary scoring** (default): `EVAL_SCORING=binary` — pass/fail + critique per dimension. More reliable and actionable than Likert scales. Use `EVAL_SCORING=likert` for legacy 1-5 strength scoring.
+   - **Multi-pass**: `EVAL_PASSES=3` runs N evaluation passes and aggregates via `EVAL_CONSENSUS` (median/majority/min) to reduce score variance. Individual pass results saved as `evaluation-{model}-pass-{N}.json`.
    - Exit code 1 if critical gaps found.
 
 3. **Merge** (`merge-plans.sh`): Takes the generated plans and produces a merged plan. Two modes:
    - `agent-teams` (default): Interactive Claude session with Agent Teams — spawns advocate agents that debate each plan, then the lead synthesizes.
    - `simple`: Headless `claude -p` that reads all plans inline and produces a merged plan.
+   - **Eval-informed**: If evaluation JSON exists in the plans directory, the merge prompt automatically includes a per-dimension summary (gaps, per-plan strengths, scores) so the merge agent knows each plan's strengths without rediscovering them.
    - Merge prompts use a 3-phase structure: Analysis (with conflict classification), Synthesis (with minority insight scanning), and Constitutional Review.
    - Supports `comparison_method: pairwise` for C(N,2) pairwise tournament scoring (simple mode only).
 
@@ -31,6 +34,7 @@ The scripts are domain-agnostic. Domain-specific configuration lives in `config.
    - **Gate 1: CONSISTENCY** — checks for internal contradictions.
    - **Gate 2: COMPLETENESS** — checks for content lost from source plans.
    - **Gate 3: ACTIONABILITY** — checks that each section has concrete next steps.
+   - **Gate 4: FACTUAL ACCURACY** — verifies citations (Author et al., Year) via WebSearch. Flags unverifiable or incorrect authors/titles. Passes if no citations present.
    - Optional `--pre-mortem` flag for failure scenario analysis.
    - Exit code 1 if any gate fails.
 
@@ -111,6 +115,9 @@ timeout: ""           # hard kill timeout in seconds (default: 3600). Env TIMEOU
 work_dir: ""          # empty = temp dir; set for codebase-aware merge
 mcp_config: ""        # MCP server config JSON
 system_prompt: ""     # system prompt for merge agents (file path or inline text)
+eval_passes: ""       # evaluation passes (default: 1). Env EVAL_PASSES overrides.
+eval_consensus: ""    # aggregation: median|majority|min (default: median). Env EVAL_CONSENSUS overrides.
+eval_scoring: ""      # scoring mode: binary (default) or likert. Env EVAL_SCORING overrides.
 project_description: "the project"
 role: "an expert analyst"
 
@@ -138,6 +145,7 @@ constitution:
   - "No section should be purely aspirational — each needs a concrete next step"
   - "Risks identified in any source plan must appear in the merged plan"
   - "The plan must be self-consistent — no section contradicts another"
+  - "When resolving a disagreement, verify the correction is applied in every section that mentions the topic"
 ```
 
 Usage: `MERGE_CONFIG=projects/hackathon/merge-config.yaml ./merge-plans.sh generated-plans/latest`
@@ -254,7 +262,10 @@ generated-plans/<name>/latest -> <timestamp>   # symlink
 | `LENS_MODEL` | `haiku` | — | Model for auto-lens generation |
 | `LENS_COUNT` | `4` | — | Number of lenses to generate |
 | `SEQUENTIAL_DIVERSITY` | — | — | Enable two-wave diversity (or use `--sequential-diversity` flag) |
-| `EVAL_MODEL` | `haiku` | — | Model for `evaluate-plans.sh` LLM evaluation |
+| `EVAL_MODEL` | `sonnet` | — | Model for `evaluate-plans.sh` LLM evaluation |
+| `EVAL_SCORING` | `binary` | — | Scoring mode: `binary` (pass/fail + critique) or `likert` (1-5 strength) |
+| `EVAL_PASSES` | `1` | — | Number of evaluation passes (consensus aggregation when > 1) |
+| `EVAL_CONSENSUS` | `median` | — | Multi-pass aggregation: `median`, `majority`, or `min` |
 | `VERIFY_MODEL` | `sonnet` | — | Model for `verify-plan.sh` quality gates |
 
 ## Project-Specific Configs (`projects/` submodule)
@@ -294,7 +305,7 @@ make fmt       # shfmt format in-place
 make fmt-check # shfmt check without modifying
 ```
 
-Test structure (97 tests across 9 files):
+Test structure (116 tests across 9 files):
 - `test/generate-plans.bats` — flag parsing, multi-file mode, sequential diversity
 - `test/auto-lenses.bats` — lens generation, edge cases
 - `test/verify-plan.bats` — quality gates, pre-mortem

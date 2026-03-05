@@ -65,9 +65,9 @@ teardown() {
 # ─── verify-plan.sh ────────────────────────────────────────────────────────
 
 @test "verification uses --permission-mode dontAsk" {
-  # Verification is pure text (plans embedded, markdown output).
+  # Verification uses dontAsk + allowedTools WebSearch (for citation checking).
   run bash -c "
-    grep -A5 'claude -p.*VERIFY_PROMPT' '${PROJECT_ROOT}/verify-plan.sh'
+    grep -A8 'claude -p.*VERIFY_PROMPT' '${PROJECT_ROOT}/verify-plan.sh'
   "
   assert_success
   assert_output --partial "permission-mode dontAsk"

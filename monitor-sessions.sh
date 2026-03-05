@@ -1024,8 +1024,18 @@ for log_path in sorted(glob.glob(os.path.join(run_dir, "plan-*.log"))):
     })
 
 # EVALUATE stage
-eval_md_exists, eval_md_size = file_info(os.path.join(run_dir, "evaluation.md"))
-eval_json_exists, eval_json_size = file_info(os.path.join(run_dir, "evaluation.json"))
+# Evaluation files: versioned (evaluation-{model}.md) or legacy (evaluation.md)
+eval_md_exists, eval_md_size, eval_md_name = False, 0, "evaluation.md"
+eval_json_exists, eval_json_size = False, 0
+for _f in sorted(glob.glob(os.path.join(run_dir, "evaluation*.md"))):
+    _exists, _size = file_info(_f)
+    if _exists and _size > eval_md_size:
+        eval_md_exists, eval_md_size = _exists, _size
+        eval_md_name = os.path.basename(_f)
+for _f in sorted(glob.glob(os.path.join(run_dir, "evaluation*.json"))):
+    _exists, _size = file_info(_f)
+    if _exists and _size > 0:
+        eval_json_exists, eval_json_size = _exists, _size
 
 # MERGE stage
 merge_log_path = os.path.join(run_dir, "merge.log")
@@ -1166,11 +1176,11 @@ else:
 print()
 print(f"{C.BOLD}{HR}{HR} EVALUATE {HR * 53}{C.RESET}")
 if eval_md_exists:
-    print(f"  evaluation.md     {human_size(eval_md_size):>8}   {status_colored('done')}")
+    print(f"  {eval_md_name:<20}{human_size(eval_md_size):>8}   {status_colored('done')}")
 else:
-    print(f"  evaluation.md     {DASH:>8}   {status_colored('not run')}")
+    print(f"  {'evaluation.md':<20}{DASH:>8}   {status_colored('not run')}")
 if eval_json_exists:
-    print(f"  evaluation.json   {human_size(eval_json_size):>8}   {status_colored('done')}")
+    print(f"  {'evaluation.json':<20}{human_size(eval_json_size):>8}   {status_colored('done')}")
 
 # -- MERGE --
 if merge_status == "running":
@@ -1223,8 +1233,6 @@ else:
     print(f"  verification-report.md   {DASH:>8}   {status_colored('not run')}")
 if premortem_exists:
     print(f"  pre-mortem.md            {human_size(premortem_size):>8}   {status_colored('done')}")
-else:
-    print(f"  pre-mortem.md            {DASH:>8}   {status_colored('not run')}")
 
 # -- Totals --
 stages_done = sum([

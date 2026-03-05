@@ -31,6 +31,24 @@ timeout: ""
 # script directory or absolute). File contents are read at launch time.
 system_prompt: ""
 
+# Number of evaluation passes for evaluate-plans.sh (default: 1).
+# Multiple passes reduce score variance (~33% between single runs).
+# Override per-run: EVAL_PASSES=3 ./evaluate-plans.sh ...
+eval_passes: ""
+
+# How to aggregate multi-pass evaluation results.
+# Options: median (default), majority, min
+# Override per-run: EVAL_CONSENSUS=majority ./evaluate-plans.sh ...
+eval_consensus: ""
+
+# Evaluation scoring mode.
+# binary (default): pass/fail + critique per dimension. More reliable and
+#   actionable than numeric scores. Recommended by eval methodology research.
+# likert: 1-5 strength score + boolean covered. Legacy mode with ~33% score
+#   variance between runs.
+# Override per-run: EVAL_SCORING=likert ./evaluate-plans.sh ...
+eval_scoring: ""
+
 # Short description of what these plans are about.
 # Used in the intro prompt to give Claude context.
 project_description: "a software project (customize in merge-config.yaml)"
@@ -86,3 +104,4 @@ constitution:
   - "No section should be purely aspirational — each needs a concrete next step"
   - "Risks identified in any source plan must appear in the merged plan"
   - "The plan must be self-consistent — no section contradicts another"
+  - "When resolving a disagreement, verify the correction is applied in every section that mentions the topic"

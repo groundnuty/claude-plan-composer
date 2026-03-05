@@ -445,6 +445,10 @@ if [[ -n "${AUTO_LENSES}" ]]; then
 analytical perspectives to approach it from. Each perspective should force
 genuinely different trade-offs, priorities, and reasoning paths.
 
+At least one perspective MUST be explicitly adversarial — focused on finding
+weaknesses in the obvious approach, identifying missing alternatives, and
+surfacing reasons the proposed solution might fail.
+
 For each perspective, output:
 - name: a short kebab-case identifier (e.g., 'risk-first', 'user-centric')
 - guidance: 2-3 sentences of specific guidance for that perspective

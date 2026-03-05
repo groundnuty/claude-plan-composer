@@ -89,7 +89,7 @@ print('# Plan B\n' + content)
 
 @test "convergence check detects divergent plans" {
   mkdir -p "${TEST_TEMP_DIR}/plans"
-  # Two plans with completely different headings
+  # Two plans with completely different headings (simulates multi-file mode)
   python3 -c "
 sections = ['## API Design', '## Database Schema', '## Auth Flow']
 content = '\n'.join(s + '\nDetails here.\n' * 30 for s in sections)
@@ -104,6 +104,9 @@ print('# Plan B\n' + content)
   run "${PROJECT_ROOT}/evaluate-plans.sh" "--no-llm" "${TEST_TEMP_DIR}/plans"
   assert_success
   assert_output --partial "0% overlap"
+  # Near-zero overlap should get friendly message, not scary warning
+  assert_output --partial "expected for multi-file mode"
+  refute_output --partial "merge may need manual guidance"
 }
 
 @test "writes evaluation.md summary" {
@@ -117,6 +120,64 @@ print('# Plan B\n' + content)
   assert_success
   [[ -f "${TEST_TEMP_DIR}/plans/evaluation.md" ]]
 }
+
+# ─── Configuration ──────────────────────────────────────────────────
+
+@test "eval output files are versioned by model name" {
+  # evaluate-plans.sh should use evaluation-{model}.json, not evaluation.json
+  run bash -c "grep 'evaluation-.*EVAL_MODEL' '${PROJECT_ROOT}/evaluate-plans.sh'"
+  assert_success
+}
+
+@test "eval_passes config field is parsed from merge config" {
+  run bash -c "grep -c 'EVAL_PASSES' '${PROJECT_ROOT}/evaluate-plans.sh'"
+  assert_success
+  [[ "${output}" -ge 3 ]]  # config parse + resolution + loop usage
+}
+
+@test "eval_consensus config field is parsed from merge config" {
+  run bash -c "grep -c 'EVAL_CONSENSUS' '${PROJECT_ROOT}/evaluate-plans.sh'"
+  assert_success
+  [[ "${output}" -ge 3 ]]  # config parse + resolution + aggregation usage
+}
+
+@test "default EVAL_MODEL is sonnet" {
+  run bash -c "grep 'EVAL_MODEL=.*:-' '${PROJECT_ROOT}/evaluate-plans.sh'"
+  assert_success
+  assert_output --partial "sonnet"
+}
+
+# ─── Binary scoring ─────────────────────────────────────────────────
+
+@test "eval_scoring config field is parsed from merge config" {
+  run bash -c "grep -c 'EVAL_SCORING' '${PROJECT_ROOT}/evaluate-plans.sh'"
+  assert_success
+  [[ "${output}" -ge 3 ]]  # config parse + resolution + prompt branch
+}
+
+@test "default EVAL_SCORING is binary" {
+  run bash -c "grep 'EVAL_SCORING=.*:-' '${PROJECT_ROOT}/evaluate-plans.sh'"
+  assert_success
+  assert_output --partial "binary"
+}
+
+@test "binary eval prompt asks for pass/fail not strength" {
+  # The binary branch of the prompt should contain 'pass' and 'critique'
+  run bash -c "sed -n '/EVAL_SCORING.*binary/,/Plans to evaluate/p' '${PROJECT_ROOT}/evaluate-plans.sh'"
+  assert_success
+  assert_output --partial "pass"
+  assert_output --partial "critique"
+}
+
+@test "likert eval prompt preserves strength scoring" {
+  # The else/likert branch should contain 'strength' and '1-5'
+  run bash -c "sed -n '/Legacy Likert/,/Plans to evaluate/p' '${PROJECT_ROOT}/evaluate-plans.sh'"
+  assert_success
+  assert_output --partial "strength"
+  assert_output --partial "1-5"
+}
+
+# ─── Plan filtering ─────────────────────────────────────────────────
 
 @test "skips plans smaller than 1000 bytes" {
   mkdir -p "${TEST_TEMP_DIR}/plans"
