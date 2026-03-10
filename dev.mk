@@ -3,16 +3,16 @@
 check: build lint test
 
 build:
-	npx tsc --noEmit
+	devbox run -- npx tsc --noEmit
 
 lint:
-	npx eslint src/
+	devbox run -- npx eslint src/
 
 test:
-	npx vitest run
+	devbox run -- npx vitest run
 
 test-e2e:
-	npx vitest run test/e2e/
+	devbox run -- npx vitest run test/e2e/
 
 clean:
 	rm -rf dist coverage

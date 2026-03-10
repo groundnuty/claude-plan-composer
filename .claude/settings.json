@@ -2,6 +2,9 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "alwaysThinkingEnabled": true,
   "enableAllProjectMcpServers": false,
+  "env": {
+    "ENABLE_LSP_TOOL": "1"
+  },
   "permissions": {
     "allow": [
       "Read",
@@ -90,6 +93,16 @@
             "timeout": 5000
           }
         ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Post-compaction reminder: ESM-only project (.js import extensions). Use devbox — do not install on host. Makefile (dev.mk) is primary dev interface. Run make -f dev.mk check before finishing. AGENTS.md is CLAUDE.md for this project.'",
+            "timeout": 5000
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -98,8 +111,24 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'command -v jq >/dev/null 2>&1 || exit 0; FILE=$(cat | jq -r \".tool_input.file_path // empty\"); case \"$FILE\" in *.ts|*.tsx) npx eslint --no-warn-ignored \"$FILE\" 2>&1 | head -20 || true ;; esac'",
+            "command": "sh -c 'command -v jq >/dev/null 2>&1 || exit 0; FILE=$(cat | jq -r \".tool_input.file_path // empty\"); case \"$FILE\" in *.ts|*.tsx) ./node_modules/.bin/eslint --no-warn-ignored \"$FILE\" 2>&1 | head -20 || true ;; esac'",
             "timeout": 15000
+          },
+          {
+            "type": "command",
+            "command": "sh -c 'command -v jq >/dev/null 2>&1 || exit 0; FILE=$(cat | jq -r \".tool_input.file_path // empty\"); case \"$FILE\" in *.ts|*.tsx) ./node_modules/.bin/tsc --noEmit 2>&1 | head -20 ;; esac; exit 0'",
+            "timeout": 30000
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'echo \"State before compaction:\"; echo \"Branch: $(git branch --show-current 2>/dev/null)\"; echo \"Modified files: $(git diff --name-only 2>/dev/null | tr \"\\n\" \", \")\"; echo \"Staged files: $(git diff --cached --name-only 2>/dev/null | tr \"\\n\" \", \")\"'",
+            "timeout": 5000
           }
         ]
       }
@@ -109,7 +138,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'INPUT=$(cat); if echo \"$INPUT\" | jq -e .stop_hook_active >/dev/null 2>&1 && [ \"$(echo \"$INPUT\" | jq -r .stop_hook_active)\" = \"true\" ]; then exit 0; fi; [ -z \"$CLAUDE_PROJECT_DIR\" ] && { echo \"ERROR: CLAUDE_PROJECT_DIR not set\" >&2; exit 2; }; cd \"$CLAUDE_PROJECT_DIR\" || { echo \"ERROR: cannot cd to $CLAUDE_PROJECT_DIR\" >&2; exit 2; }; command -v devbox >/dev/null 2>&1 || { echo \"ERROR: devbox not installed\" >&2; exit 2; }; OUTPUT=$(devbox run -- make -f dev.mk check 2>&1); rc=$?; printf \"%s\\n\" \"$OUTPUT\" | tail -30; if [ $rc -ne 0 ]; then exit 2; fi'",
+            "command": "sh -c 'INPUT=$(cat); if echo \"$INPUT\" | jq -e .stop_hook_active >/dev/null 2>&1 && [ \"$(echo \"$INPUT\" | jq -r .stop_hook_active)\" = \"true\" ]; then exit 0; fi; [ -z \"$CLAUDE_PROJECT_DIR\" ] && { echo \"ERROR: CLAUDE_PROJECT_DIR not set\" >&2; exit 2; }; cd \"$CLAUDE_PROJECT_DIR\" || { echo \"ERROR: cannot cd to $CLAUDE_PROJECT_DIR\" >&2; exit 2; }; command -v devbox >/dev/null 2>&1 || { echo \"ERROR: devbox not installed\" >&2; exit 2; }; OUTPUT=$(make -f dev.mk check 2>&1); rc=$?; printf \"%s\\n\" \"$OUTPUT\" | tail -30; if [ $rc -ne 0 ]; then exit 2; fi'",
             "timeout": 120000
           }
         ]
