@@ -1,0 +1,8 @@
+{
+  "scores": [
+    { "dimension": "Approach and strategy", "score": 4, "critique": "Clear but could be more specific" },
+    { "dimension": "Technical depth", "score": 2, "critique": "Insufficient implementation detail" },
+    { "dimension": "Risk assessment", "score": 5, "critique": "Comprehensive risk analysis" }
+  ],
+  "summary": "Average score 3.7/5. Technical depth is the weakest dimension."
+}

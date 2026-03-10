@@ -1,0 +1,14 @@
+model: sonnet
+max_turns: 15
+strategy: simple
+comparison_method: holistic
+project_description: "test project"
+role: "an expert analyst"
+
+dimensions:
+  - Approach and strategy
+  - Technical depth
+
+constitution:
+  - Every trade-off must be acknowledged
+  - No section should be purely aspirational

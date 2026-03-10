@@ -1,0 +1,34 @@
+{
+  "name": "claude-plan-composer",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "cpc": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "vitest run test/e2e/",
+    "lint": "eslint src/",
+    "check": "tsc --noEmit && eslint src/ && vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.71",
+    "commander": "^13.0.0",
+    "js-yaml": "^4.1.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0",
+    "eslint": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

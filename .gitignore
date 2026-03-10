@@ -1,0 +1,7 @@
+node_modules/
+dist/
+generated-plans/
+*.log
+.env
+.env.local
+coverage/

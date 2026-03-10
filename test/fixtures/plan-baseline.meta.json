@@ -1,0 +1,16 @@
+{
+  "model": "claude-sonnet-4-6-20260310",
+  "turns": 5,
+  "durationMs": 30000,
+  "durationApiMs": 25000,
+  "tokenUsage": {
+    "inputTokens": 5000,
+    "outputTokens": 8000,
+    "cacheReadInputTokens": 3000,
+    "cacheCreationInputTokens": 1000,
+    "costUsd": 0.15
+  },
+  "costUsd": 0.15,
+  "stopReason": "end_turn",
+  "sessionId": "test-session-baseline"
+}

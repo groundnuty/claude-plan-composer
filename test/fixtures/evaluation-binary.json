@@ -1,0 +1,8 @@
+{
+  "scores": [
+    { "dimension": "Approach and strategy", "pass": true, "critique": "Both plans have clear approaches" },
+    { "dimension": "Technical depth", "pass": false, "critique": "Simplicity plan lacks implementation detail" },
+    { "dimension": "Risk assessment", "pass": true, "critique": "Risks identified in both plans" }
+  ],
+  "summary": "2/3 dimensions pass. Technical depth needs improvement in simplicity variant."
+}
