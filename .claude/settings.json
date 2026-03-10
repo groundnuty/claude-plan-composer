@@ -109,7 +109,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'INPUT=$(cat); if echo \"$INPUT\" | jq -e .stop_hook_active >/dev/null 2>&1 && [ \"$(echo \"$INPUT\" | jq -r .stop_hook_active)\" = \"true\" ]; then exit 0; fi; [ -z \"$CLAUDE_PROJECT_DIR\" ] && { echo \"ERROR: CLAUDE_PROJECT_DIR not set\" >&2; exit 2; }; cd \"$CLAUDE_PROJECT_DIR\" || { echo \"ERROR: cannot cd to $CLAUDE_PROJECT_DIR\" >&2; exit 2; }; OUTPUT=$(make -f dev.mk check 2>&1); rc=$?; printf \"%s\\n\" \"$OUTPUT\" | tail -30; if [ $rc -ne 0 ]; then exit 2; fi'",
+            "command": "sh -c 'INPUT=$(cat); if echo \"$INPUT\" | jq -e .stop_hook_active >/dev/null 2>&1 && [ \"$(echo \"$INPUT\" | jq -r .stop_hook_active)\" = \"true\" ]; then exit 0; fi; [ -z \"$CLAUDE_PROJECT_DIR\" ] && { echo \"ERROR: CLAUDE_PROJECT_DIR not set\" >&2; exit 2; }; cd \"$CLAUDE_PROJECT_DIR\" || { echo \"ERROR: cannot cd to $CLAUDE_PROJECT_DIR\" >&2; exit 2; }; command -v devbox >/dev/null 2>&1 || { echo \"ERROR: devbox not installed\" >&2; exit 2; }; OUTPUT=$(devbox run -- make -f dev.mk check 2>&1); rc=$?; printf \"%s\\n\" \"$OUTPUT\" | tail -30; if [ $rc -ne 0 ]; then exit 2; fi'",
             "timeout": 120000
           }
         ]
