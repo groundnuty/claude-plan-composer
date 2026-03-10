@@ -13,6 +13,7 @@
       "WebFetch",
       "WebSearch",
       "Bash(*)",
+      "Agent",
       "mcp__*"
     ],
     "deny": [
@@ -33,7 +34,7 @@
     "enabled": true,
     "autoAllowBashIfSandboxed": true,
     "allowUnsandboxedCommands": true,
-    "excludedCommands": ["ssh", "scp", "rsync", "devbox", "nix", "git", "gpg", "gpg-agent"],
+    "excludedCommands": ["ssh:*", "scp:*", "rsync:*", "devbox:*", "nix:*", "git:*", "gpg:*", "gpg-agent:*"],
     "network": {
       "allowedDomains": [
         "cache.nixos.org",
