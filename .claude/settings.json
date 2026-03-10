@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "alwaysThinkingEnabled": true,
+  "enableAllProjectMcpServers": false,
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "WebFetch",
+      "WebSearch",
+      "Bash(*)",
+      "mcp__*"
+    ],
+    "deny": [
+      "Read(~/.ssh/id_*)",
+      "Read(~/.ssh/*.pem)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Bash(sudo *)",
+      "Bash(rm -rf /)",
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(docker push *)",
+      "Bash(git commit --no-verify *)",
+      "Bash(git commit -n *)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true,
+    "allowUnsandboxedCommands": true,
+    "excludedCommands": ["ssh", "scp", "rsync", "devbox", "nix", "git", "gpg", "gpg-agent"],
+    "network": {
+      "allowedDomains": [
+        "cache.nixos.org",
+        "*.nixos.org",
+        "releases.nixos.org",
+        "channels.nixos.org",
+        "*.cachix.org",
+        "nix-community.cachix.org",
+        "github.com",
+        "api.github.com",
+        "*.githubusercontent.com",
+        "search.devbox.sh",
+        "*.devbox.sh",
+        "registry.npmjs.org",
+        "registry.hub.docker.com"
+      ]
+    },
+    "filesystem": {
+      "allowWrite": [
+        "~/.cache/devbox",
+        "~/.local/share/devbox",
+        "~/.nix-profile",
+        "/nix"
+      ],
+      "denyWrite": [
+        "/etc",
+        "/usr",
+        "/bin",
+        "/sbin",
+        "~/.ssh",
+        "~/.aws",
+        "~/.bashrc",
+        "~/.zshrc"
+      ],
+      "denyRead": [
+        "~/.aws",
+        "~/.kube",
+        "~/.config/gcloud"
+      ]
+    }
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true,
+    "everything-claude-code@everything-claude-code": true,
+    "commit-commands@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "context7@claude-plugins-official": true,
+    "holistic-linting@jamie-bitflight-skills": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"Branch: $(git branch --show-current 2>/dev/null || echo 'detached'). Recent: $(git log --oneline -3 2>/dev/null || echo 'no commits')\"",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'command -v jq >/dev/null 2>&1 || exit 0; FILE=$(cat | jq -r \".tool_input.file_path // empty\"); case \"$FILE\" in *.ts|*.tsx) npx eslint --no-warn-ignored \"$FILE\" 2>&1 | head -20 || true ;; esac'",
+            "timeout": 15000
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'INPUT=$(cat); if echo \"$INPUT\" | jq -e .stop_hook_active >/dev/null 2>&1 && [ \"$(echo \"$INPUT\" | jq -r .stop_hook_active)\" = \"true\" ]; then exit 0; fi; [ -z \"$CLAUDE_PROJECT_DIR\" ] && { echo \"ERROR: CLAUDE_PROJECT_DIR not set\" >&2; exit 2; }; cd \"$CLAUDE_PROJECT_DIR\" || { echo \"ERROR: cannot cd to $CLAUDE_PROJECT_DIR\" >&2; exit 2; }; OUTPUT=$(make -f dev.mk check 2>&1); rc=$?; printf \"%s\\n\" \"$OUTPUT\" | tail -30; if [ $rc -ne 0 ]; then exit 2; fi'",
+            "timeout": 120000
+          }
+        ]
+      }
+    ]
+  }
+}
