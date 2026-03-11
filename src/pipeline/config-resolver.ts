@@ -8,9 +8,15 @@ import { ConfigValidationError } from "../types/errors.js";
 function snakeToCamel(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    const camelKey = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+    const camelKey = key.replace(/_([a-z])/g, (_, c: string) =>
+      c.toUpperCase(),
+    );
     result[camelKey] = Array.isArray(value)
-      ? value.map(v => typeof v === "object" && v !== null ? snakeToCamel(v as Record<string, unknown>) : v)
+      ? value.map((v) =>
+          typeof v === "object" && v !== null
+            ? snakeToCamel(v as Record<string, unknown>)
+            : v,
+        )
       : typeof value === "object" && value !== null
         ? snakeToCamel(value as Record<string, unknown>)
         : value;
@@ -36,25 +42,101 @@ async function findConfigFile(
   try {
     await fs.access(localPath);
     return localPath;
-  } catch { /* not found */ }
+  } catch {
+    /* not found */
+  }
 
   // 4. Default config file
   try {
     await fs.access(baseName);
     return baseName;
-  } catch { /* not found */ }
+  } catch {
+    /* not found */
+  }
 
   return undefined;
 }
 
+/**
+ * Convert bash-style variant map to TS array format.
+ *
+ * Bash format:    { baseline: "", simplicity: "guidance", depth: { model: "sonnet", guidance: "..." } }
+ * TS format:      [{ name: "baseline", guidance: "" }, { name: "simplicity", guidance: "guidance" }, ...]
+ */
+function normalizeVariants(
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  const variants = raw.variants;
+  if (variants == null || Array.isArray(variants)) return raw;
+
+  if (typeof variants === "object") {
+    const map = variants as Record<string, unknown>;
+    const arr = Object.entries(map).map(([name, value]) => {
+      if (typeof value === "string" || value === null || value === undefined) {
+        return { name, guidance: value ?? "" };
+      }
+      if (typeof value === "object") {
+        const obj = value as Record<string, unknown>;
+        return {
+          name,
+          guidance: obj.guidance ?? "",
+          ...(obj.model ? { model: obj.model } : {}),
+        };
+      }
+      return { name, guidance: String(value) };
+    });
+    return { ...raw, variants: arr };
+  }
+
+  return raw;
+}
+
+/** Convert bash-style timeout (seconds) to timeoutMs if present */
+function normalizeTimeout(
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  if ("timeout" in raw && !("timeoutMs" in raw)) {
+    const secs = Number(raw.timeout);
+    if (!isNaN(secs) && secs > 0) {
+      const { timeout: _, ...rest } = raw;
+      return { ...rest, timeoutMs: secs * 1000 };
+    }
+  }
+  if ("timeoutSecs" in raw && !("timeoutMs" in raw)) {
+    const secs = Number(raw.timeoutSecs);
+    if (!isNaN(secs) && secs > 0) {
+      const { timeoutSecs: _, ...rest } = raw;
+      return { ...rest, timeoutMs: secs * 1000 };
+    }
+  }
+  return raw;
+}
+
+/** Convert bash-style add_dirs to additionalDirs */
+function normalizeAddDirs(
+  raw: Record<string, unknown>,
+): Record<string, unknown> {
+  if ("addDirs" in raw && !("additionalDirs" in raw)) {
+    const { addDirs, ...rest } = raw;
+    return { ...rest, additionalDirs: addDirs };
+  }
+  return raw;
+}
+
 /** Load and parse a YAML config file, transforming snake_case to camelCase */
-async function loadYamlConfig(filePath: string): Promise<Record<string, unknown>> {
+async function loadYamlConfig(
+  filePath: string,
+): Promise<Record<string, unknown>> {
   const content = await fs.readFile(filePath, "utf-8");
   const raw = yaml.load(content);
   if (typeof raw !== "object" || raw === null) {
     return {};
   }
-  return snakeToCamel(raw as Record<string, unknown>);
+  let config = snakeToCamel(raw as Record<string, unknown>);
+  config = normalizeVariants(config);
+  config = normalizeTimeout(config);
+  config = normalizeAddDirs(config);
+  return config;
 }
 
 /** Apply environment variable overrides (CPC_* prefix) */
@@ -120,7 +202,11 @@ export interface ResolveOptions {
 export async function resolveGenerateConfig(
   options: ResolveOptions = {},
 ): Promise<GenerateConfig> {
-  const configPath = await findConfigFile("config.yaml", options.cliConfigPath, "CPC_CONFIG");
+  const configPath = await findConfigFile(
+    "config.yaml",
+    options.cliConfigPath,
+    "CPC_CONFIG",
+  );
 
   let raw: Record<string, unknown> = {};
   if (configPath) {
@@ -140,7 +226,11 @@ export async function resolveGenerateConfig(
 export async function resolveMergeConfig(
   options: ResolveOptions = {},
 ): Promise<MergeConfig> {
-  const configPath = await findConfigFile("merge-config.yaml", options.cliConfigPath, "CPC_MERGE_CONFIG");
+  const configPath = await findConfigFile(
+    "merge-config.yaml",
+    options.cliConfigPath,
+    "CPC_MERGE_CONFIG",
+  );
 
   let raw: Record<string, unknown> = {};
   if (configPath) {
