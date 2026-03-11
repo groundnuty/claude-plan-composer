@@ -3,6 +3,9 @@ export {
   readPlanSet,
   writeMergeResult,
   loadMcpConfig,
+  writeEvalResult,
+  readEvalResult,
+  writeVerifyResult,
 } from "./io.js";
 export {
   resolveGenerateConfig,

@@ -1,4 +1,9 @@
-import type { DimensionScore, PlanScore, EvalResult, Gap } from "../types/evaluation.js";
+import type {
+  DimensionScore,
+  PlanScore,
+  EvalResult,
+  Gap,
+} from "../types/evaluation.js";
 
 // ---------------------------------------------------------------------------
 // Internal type
@@ -20,7 +25,7 @@ function extractJsonText(text: string): string {
   // Try ```json ... ``` or ``` ... ``` fences first
   const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
   if (fenceMatch) {
-    return fenceMatch[1].trim();
+    return fenceMatch[1]!.trim();
   }
 
   // Fall back: find the first `{` and matching closing `}`
@@ -85,7 +90,12 @@ export function parseEvalResponse(text: string): RawEvalResponse {
 
   const obj = parsed as Record<string, unknown>;
 
-  const requiredFields = ["planScores", "gaps", "convergence", "summary"] as const;
+  const requiredFields = [
+    "planScores",
+    "gaps",
+    "convergence",
+    "summary",
+  ] as const;
   for (const field of requiredFields) {
     if (!(field in obj)) {
       throw new Error(`parseEvalResponse: missing required field "${field}"`);
@@ -109,24 +119,24 @@ function collectDimScores(
   planScores: readonly PlanScore[],
   dimension: string,
 ): readonly DimensionScore[] {
-  return planScores.flatMap(ps =>
-    ps.dimensions.filter(d => d.dimension === dimension),
+  return planScores.flatMap((ps) =>
+    ps.dimensions.filter((d) => d.dimension === dimension),
   );
 }
 
 /** Determine whether scores are binary (pass field) or likert (score field) */
 function isBinary(scores: readonly DimensionScore[]): boolean {
-  return scores.some(s => "pass" in s);
+  return scores.some((s) => "pass" in s);
 }
 
 /** Compute the median of a sorted array of numbers */
 function computeMedian(sorted: readonly number[]): number {
   const mid = Math.floor(sorted.length / 2);
   if (sorted.length % 2 === 1) {
-    return sorted[mid];
+    return sorted[mid]!;
   }
   // Even count: average of the two middle values
-  return (sorted[mid - 1] + sorted[mid]) / 2;
+  return (sorted[mid - 1]! + sorted[mid]!) / 2;
 }
 
 /** Aggregate a set of DimensionScores with the given consensus method */
@@ -137,12 +147,12 @@ function aggregateDimension(
 ): DimensionScore {
   // Synthesize a combined critique from all scores
   const critique = scores
-    .map(s => s.critique)
+    .map((s) => s.critique)
     .filter(Boolean)
     .join(" | ");
 
   if (isBinary(scores)) {
-    const passCount = scores.filter(s => s.pass === true).length;
+    const passCount = scores.filter((s) => s.pass === true).length;
 
     let pass: boolean;
     if (consensus === "min") {
@@ -158,7 +168,7 @@ function aggregateDimension(
 
   // Likert path
   const values = scores
-    .map(s => s.score)
+    .map((s) => s.score)
     .filter((v): v is number => typeof v === "number");
 
   const sorted = [...values].sort((a, b) => a - b);
@@ -167,7 +177,7 @@ function aggregateDimension(
   if (consensus === "median") {
     score = computeMedian(sorted);
   } else if (consensus === "min") {
-    score = sorted[0];
+    score = sorted[0]!;
   } else {
     // majority: mean rounded
     const mean = values.reduce((acc, v) => acc + v, 0) / values.length;
@@ -211,7 +221,7 @@ export function aggregateScores(
     }
   }
 
-  return dimensions.map(dim => {
+  return dimensions.map((dim) => {
     const scores = collectDimScores(planScores, dim);
     return aggregateDimension(dim, scores, consensus);
   });

@@ -3,10 +3,14 @@ import { existsSync } from "node:fs";
 import * as path from "node:path";
 import type { Plan, PlanMetadata, PlanSet, TokenUsage } from "../types/plan.js";
 import type { MergeResult } from "../types/merge-result.js";
+import type { EvalResult, VerifyResult } from "../types/evaluation.js";
 import { PlanExtractionError } from "../types/errors.js";
 
 /** Write a PlanSet to disk: plan-*.md + plan-*.meta.json + latest symlink */
-export async function writePlanSet(planSet: PlanSet, baseDir: string): Promise<string> {
+export async function writePlanSet(
+  planSet: PlanSet,
+  baseDir: string,
+): Promise<string> {
   const runDir = path.join(baseDir, planSet.timestamp.replace(/[:.]/g, "-"));
   await fs.mkdir(runDir, { recursive: true });
 
@@ -59,11 +63,14 @@ const EMPTY_METADATA: PlanMetadata = {
 export async function readPlanSet(dir: string): Promise<PlanSet> {
   const entries = await fs.readdir(dir);
   const planFiles = entries
-    .filter(f => f.startsWith("plan-") && f.endsWith(".md"))
+    .filter((f) => f.startsWith("plan-") && f.endsWith(".md"))
     .sort();
 
   if (planFiles.length === 0) {
-    throw new PlanExtractionError("(all)", `No plan-*.md files found in ${dir}`);
+    throw new PlanExtractionError(
+      "(all)",
+      `No plan-*.md files found in ${dir}`,
+    );
   }
 
   const plans: Plan[] = await Promise.all(
@@ -93,20 +100,30 @@ export async function readPlanSet(dir: string): Promise<PlanSet> {
 }
 
 /** Write merge result to disk: merged-plan.md + merge-result.json */
-export async function writeMergeResult(result: MergeResult, dir: string): Promise<void> {
+export async function writeMergeResult(
+  result: MergeResult,
+  dir: string,
+): Promise<void> {
   await fs.writeFile(path.join(dir, "merged-plan.md"), result.content);
   await fs.writeFile(
     path.join(dir, "merge-result.json"),
-    JSON.stringify({
-      comparison: result.comparison,
-      strategy: result.strategy,
-      metadata: result.metadata,
-    }, null, 2),
+    JSON.stringify(
+      {
+        comparison: result.comparison,
+        strategy: result.strategy,
+        metadata: result.metadata,
+      },
+      null,
+      2,
+    ),
   );
 }
 
 /** Resolve MCP config path relative to a base directory */
-export function loadMcpConfig(configPath: string, baseDir: string): string | undefined {
+export function loadMcpConfig(
+  configPath: string,
+  baseDir: string,
+): string | undefined {
   if (!configPath) return undefined;
   const resolved = path.isAbsolute(configPath)
     ? configPath
@@ -116,4 +133,39 @@ export function loadMcpConfig(configPath: string, baseDir: string): string | und
     return undefined;
   }
   return resolved;
+}
+
+/** Write evaluation result to disk: evaluation.json */
+export async function writeEvalResult(
+  result: EvalResult,
+  dir: string,
+): Promise<void> {
+  await fs.writeFile(
+    path.join(dir, "evaluation.json"),
+    JSON.stringify(result, null, 2),
+  );
+}
+
+/** Read evaluation result from disk, returns undefined if file not found */
+export async function readEvalResult(
+  dir: string,
+): Promise<EvalResult | undefined> {
+  const filePath = path.join(dir, "evaluation.json");
+  try {
+    const raw = await fs.readFile(filePath, "utf-8");
+    return JSON.parse(raw) as EvalResult;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Write verification result to disk: verification-report.json */
+export async function writeVerifyResult(
+  result: VerifyResult,
+  dir: string,
+): Promise<void> {
+  await fs.writeFile(
+    path.join(dir, "verification-report.json"),
+    JSON.stringify(result, null, 2),
+  );
 }

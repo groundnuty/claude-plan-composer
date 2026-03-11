@@ -8,11 +8,15 @@ import {
   readPlanSet,
   writeMergeResult,
   loadMcpConfig,
+  writeEvalResult,
+  readEvalResult,
+  writeVerifyResult,
 } from "../../src/pipeline/io.js";
 import { NdjsonLogger } from "../../src/pipeline/logger.js";
 import { PlanExtractionError } from "../../src/types/errors.js";
 import type { PlanSet } from "../../src/types/plan.js";
 import type { MergeResult } from "../../src/types/merge-result.js";
+import type { EvalResult, VerifyResult } from "../../src/types/evaluation.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,7 +27,10 @@ const TMPDIR = process.env["TMPDIR"] ?? "/private/tmp/claude-501";
 let tmpDir: string;
 
 beforeEach(async () => {
-  tmpDir = path.join(TMPDIR, `io-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  tmpDir = path.join(
+    TMPDIR,
+    `io-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   await fs.mkdir(tmpDir, { recursive: true });
 });
 
@@ -83,8 +90,14 @@ describe("writePlanSet", () => {
     const planSet = makePlanSet("2026-03-10T14:30:00.000Z");
     const runDir = await writePlanSet(planSet, tmpDir);
 
-    const alphaContent = await fs.readFile(path.join(runDir, "plan-alpha.md"), "utf-8");
-    const betaContent = await fs.readFile(path.join(runDir, "plan-beta.md"), "utf-8");
+    const alphaContent = await fs.readFile(
+      path.join(runDir, "plan-alpha.md"),
+      "utf-8",
+    );
+    const betaContent = await fs.readFile(
+      path.join(runDir, "plan-beta.md"),
+      "utf-8",
+    );
 
     expect(alphaContent).toBe("# Alpha Plan\n\nAlpha content here.\n");
     expect(betaContent).toBe("# Beta Plan\n\nBeta content here.\n");
@@ -137,20 +150,22 @@ describe("readPlanSet", () => {
   it("reads plan-*.md files from a directory", async () => {
     const planSet = await readPlanSet(fixturesDir);
 
-    const variantNames = planSet.plans.map(p => p.variant.name);
+    const variantNames = planSet.plans.map((p) => p.variant.name);
     expect(variantNames).toContain("baseline");
     expect(variantNames).toContain("simplicity");
 
-    const baseline = planSet.plans.find(p => p.variant.name === "baseline");
+    const baseline = planSet.plans.find((p) => p.variant.name === "baseline");
     expect(baseline).toBeDefined();
     expect(baseline!.content).toContain("# Plan: Baseline Approach");
-    expect(baseline!.content).toContain("Component A: handles input processing");
+    expect(baseline!.content).toContain(
+      "Component A: handles input processing",
+    );
   });
 
   it("reads plan-*.meta.json when available", async () => {
     const planSet = await readPlanSet(fixturesDir);
 
-    const baseline = planSet.plans.find(p => p.variant.name === "baseline");
+    const baseline = planSet.plans.find((p) => p.variant.name === "baseline");
     expect(baseline).toBeDefined();
     expect(baseline!.metadata.model).toBe("claude-sonnet-4-6-20260310");
     expect(baseline!.metadata.turns).toBe(5);
@@ -163,7 +178,9 @@ describe("readPlanSet", () => {
     const planSet = await readPlanSet(fixturesDir);
 
     // plan-simplicity.md has no matching .meta.json
-    const simplicity = planSet.plans.find(p => p.variant.name === "simplicity");
+    const simplicity = planSet.plans.find(
+      (p) => p.variant.name === "simplicity",
+    );
     expect(simplicity).toBeDefined();
     expect(simplicity!.metadata.model).toBe("unknown");
     expect(simplicity!.metadata.turns).toBe(0);
@@ -178,13 +195,15 @@ describe("readPlanSet", () => {
     await fs.mkdir(emptyDir, { recursive: true });
 
     await expect(readPlanSet(emptyDir)).rejects.toThrow(PlanExtractionError);
-    await expect(readPlanSet(emptyDir)).rejects.toThrow(/No plan-\*\.md files found/);
+    await expect(readPlanSet(emptyDir)).rejects.toThrow(
+      /No plan-\*\.md files found/,
+    );
   });
 
   it("returns plans sorted alphabetically by variant name", async () => {
     const planSet = await readPlanSet(fixturesDir);
 
-    const variantNames = planSet.plans.map(p => p.variant.name);
+    const variantNames = planSet.plans.map((p) => p.variant.name);
     const sorted = [...variantNames].sort();
     expect(variantNames).toEqual(sorted);
   });
@@ -218,9 +237,9 @@ describe("writeMergeResult", () => {
         outputTokens: 6000,
         cacheReadInputTokens: 5000,
         cacheCreationInputTokens: 2000,
-        costUsd: 0.20,
+        costUsd: 0.2,
       },
-      costUsd: 0.20,
+      costUsd: 0.2,
       stopReason: "end_turn",
       sessionId: "sess-merge",
       sourcePlans: 2,
@@ -232,7 +251,10 @@ describe("writeMergeResult", () => {
     const result = makeMergeResult();
     await writeMergeResult(result, tmpDir);
 
-    const content = await fs.readFile(path.join(tmpDir, "merged-plan.md"), "utf-8");
+    const content = await fs.readFile(
+      path.join(tmpDir, "merged-plan.md"),
+      "utf-8",
+    );
     expect(content).toBe("# Merged Plan\n\nBest of both worlds.\n");
   });
 
@@ -293,7 +315,10 @@ describe("NdjsonLogger", () => {
 
     expect(lines).toHaveLength(3);
     expect(JSON.parse(lines[0]!)).toEqual({ type: "init", sessionId: "s1" });
-    expect(JSON.parse(lines[1]!)).toEqual({ type: "message", content: "hello" });
+    expect(JSON.parse(lines[1]!)).toEqual({
+      type: "message",
+      content: "hello",
+    });
     expect(JSON.parse(lines[2]!)).toEqual({ type: "done", turns: 3 });
   });
 
@@ -303,5 +328,102 @@ describe("NdjsonLogger", () => {
 
     await expect(logger.close()).resolves.toBeUndefined();
     expect(existsSync(logPath)).toBe(true);
+  });
+});
+
+describe("writeEvalResult / readEvalResult", () => {
+  const makeEvalResult = (): EvalResult => ({
+    scores: [
+      { dimension: "architecture", pass: true, critique: "Solid approach." },
+      { dimension: "timeline", score: 4, critique: "Realistic estimates." },
+    ],
+    summary: "Both plans are viable with minor gaps.",
+    planScores: [
+      {
+        variantName: "baseline",
+        dimensions: [
+          { dimension: "architecture", pass: true, critique: "Thorough." },
+        ],
+      },
+    ],
+    gaps: [{ dimension: "testing", description: "No test strategy defined." }],
+    convergence: 0.75,
+  });
+
+  it("writes evaluation.json to directory", async () => {
+    const result = makeEvalResult();
+    await writeEvalResult(result, tmpDir);
+
+    const raw = JSON.parse(
+      await fs.readFile(path.join(tmpDir, "evaluation.json"), "utf-8"),
+    ) as EvalResult;
+
+    expect(raw.convergence).toBe(0.75);
+    expect(raw.summary).toBe("Both plans are viable with minor gaps.");
+    expect(raw.scores).toHaveLength(2);
+    expect(raw.scores[0]!.dimension).toBe("architecture");
+    expect(raw.planScores).toHaveLength(1);
+    expect(raw.gaps).toHaveLength(1);
+    expect(raw.gaps[0]!.dimension).toBe("testing");
+  });
+
+  it("readEvalResult returns undefined if file does not exist", async () => {
+    const result = await readEvalResult(tmpDir);
+    expect(result).toBeUndefined();
+  });
+
+  it("readEvalResult loads existing evaluation.json", async () => {
+    const evalResult = makeEvalResult();
+    await writeEvalResult(evalResult, tmpDir);
+
+    const loaded = await readEvalResult(tmpDir);
+    expect(loaded).toBeDefined();
+    expect(loaded!.convergence).toBe(0.75);
+    expect(loaded!.summary).toBe("Both plans are viable with minor gaps.");
+    expect(loaded!.scores).toHaveLength(2);
+    expect(loaded!.gaps[0]!.description).toBe("No test strategy defined.");
+  });
+});
+
+describe("writeVerifyResult", () => {
+  const makeVerifyResult = (): VerifyResult => ({
+    gates: [
+      {
+        gate: "consistency",
+        pass: true,
+        findings: ["No contradictions found."],
+      },
+      {
+        gate: "completeness",
+        pass: false,
+        findings: ["Missing error handling section.", "No rollback plan."],
+      },
+      {
+        gate: "actionability",
+        pass: true,
+        findings: [],
+      },
+    ],
+    pass: false,
+    report: "Plan failed completeness gate.",
+  });
+
+  it("writes verification-report.json to directory", async () => {
+    const result = makeVerifyResult();
+    await writeVerifyResult(result, tmpDir);
+
+    const raw = JSON.parse(
+      await fs.readFile(path.join(tmpDir, "verification-report.json"), "utf-8"),
+    ) as VerifyResult;
+
+    expect(raw.pass).toBe(false);
+    expect(raw.report).toBe("Plan failed completeness gate.");
+    expect(raw.gates).toHaveLength(3);
+    expect(raw.gates[0]!.gate).toBe("consistency");
+    expect(raw.gates[0]!.pass).toBe(true);
+    expect(raw.gates[1]!.gate).toBe("completeness");
+    expect(raw.gates[1]!.pass).toBe(false);
+    expect(raw.gates[1]!.findings).toHaveLength(2);
+    expect(raw.gates[2]!.gate).toBe("actionability");
   });
 });

@@ -31,7 +31,7 @@ function extractJsonText(text: string): string {
   // Try ```json ... ``` or ``` ... ``` fences first
   const fenceMatch = text.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
   if (fenceMatch) {
-    return fenceMatch[1].trim();
+    return fenceMatch[1]!.trim();
   }
 
   // Fall back: find the first `{` and matching closing `}`
@@ -133,7 +133,9 @@ function parseRawResponse(obj: Record<string, unknown>): RawVerifyResponse {
 }
 
 /** Convert raw gate entries to typed VerifyGateResult values */
-function buildGateResults(rawGates: readonly RawGate[]): readonly VerifyGateResult[] {
+function buildGateResults(
+  rawGates: readonly RawGate[],
+): readonly VerifyGateResult[] {
   return rawGates.map((raw, idx) => {
     const gate = normaliseGateName(raw.gate);
 
@@ -185,7 +187,7 @@ export function parseVerifyResponse(text: string): VerifyResult {
   const gates = buildGateResults(raw.gates);
 
   // Overall pass is true only when ALL gates pass
-  const pass = gates.every(g => g.pass);
+  const pass = gates.every((g) => g.pass);
 
   return { gates, pass, report: raw.report };
 }
