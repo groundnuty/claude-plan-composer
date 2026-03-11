@@ -9,9 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Pipeline
 
 1. **Generate** → parallel `query()` sessions per variant → `PlanSet`
-2. **Evaluate** (Phase C — types only, not implemented)
-3. **Merge** → dispatches to strategy (simple/subagent-debate/agent-teams) → `MergeResult`
-4. **Verify** (Phase C — types only, not implemented)
+2. **Evaluate** → scores plans per-dimension, detects gaps (haiku) → `EvalResult`
+3. **Merge** → dispatches to strategy (simple/subagent-debate/agent-teams), eval-informed → `MergeResult`
+4. **Verify** → 3 quality gates: consistency, completeness, actionability (sonnet) → `VerifyResult`
 
 ## Architecture
 
@@ -19,7 +19,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 src/
   types/       — Zod schemas, CpcError hierarchy, type definitions
   generate/    — prompt building, auto-lenses, parallel session runner
+  evaluate/    — pre-merge evaluation (prompt builder, scorer, SDK session)
   merge/       — prompt building, MergeStrategy interface, 3 strategies
+  verify/      — post-merge verification (3 gates, SDK session)
   pipeline/    — config resolution (YAML→Zod), I/O, NDJSON logger, orchestrator
   cli/         — Commander CLI (thin wrapper, excluded from coverage)
   index.ts     — public API barrel
@@ -35,7 +37,7 @@ The **Makefile** (`dev.mk`) is the primary interface. It wraps devbox (Node.js 2
 make -f dev.mk check      # full CI: build + lint + test
 make -f dev.mk build       # tsc --noEmit
 make -f dev.mk lint        # eslint src/
-make -f dev.mk test        # unit tests (85 tests, no API calls)
+make -f dev.mk test        # unit tests (209 tests, no API calls)
 make -f dev.mk test-e2e    # E2E (requires ANTHROPIC_API_KEY, ~$1)
 make -f dev.mk clean       # rm -rf dist coverage
 ```
@@ -67,6 +69,6 @@ superpowers, commit-commands, feature-dev, context7, code-review, security-guida
 
 ## Implementation Status
 
-- **Phase B complete**: generate + merge (all committed)
-- **Phase C stubbed**: evaluate + verify (types only in `types/evaluation.ts`)
-- CLI: `cpc generate|merge|run` with signal handling (SIGINT/SIGTERM → AbortController)
+- **Phase B complete**: generate + merge
+- **Phase C complete**: evaluate + verify
+- CLI: `cpc generate|evaluate|merge|verify|run` with signal handling (SIGINT/SIGTERM → AbortController)
