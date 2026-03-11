@@ -3,6 +3,7 @@ import type { PlanSet } from "../types/plan.js";
 import type { MergeConfig } from "../types/config.js";
 import type { EvalResult } from "../types/evaluation.js";
 import { NdjsonLogger } from "../pipeline/logger.js";
+import { SessionProgress } from "../pipeline/progress.js";
 import { buildEvalPrompt } from "./prompt-builder.js";
 import { parseEvalResponse, buildEvalResult } from "./scorer.js";
 
@@ -32,14 +33,13 @@ export async function evaluate(
 
   const abortController = new AbortController();
   if (options.signal) {
-    options.signal.addEventListener(
-      "abort",
-      () => abortController.abort(),
-      { once: true },
-    );
+    options.signal.addEventListener("abort", () => abortController.abort(), {
+      once: true,
+    });
   }
 
   let responseText = "";
+  const progress = new SessionProgress("evaluate");
 
   try {
     for await (const msg of query({
@@ -50,12 +50,13 @@ export async function evaluate(
         tools: [],
         permissionMode: "bypassPermissions" as const,
         allowDangerouslySkipPermissions: true,
-        settingSources: [],
+        settingSources: config.settingSources,
         persistSession: false,
         abortController,
-        env: { CLAUDE_CODE_MAX_OUTPUT_TOKENS: "16000" },
+        env: { CLAUDE_CODE_MAX_OUTPUT_TOKENS: "16000", CLAUDECODE: "" },
       },
     })) {
+      progress.onMessage(msg);
       await logger.write(msg);
 
       // Collect text from assistant messages

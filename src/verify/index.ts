@@ -6,6 +6,7 @@ import type { SourcePlanRef } from "./prompt-builder.js";
 import { buildVerifyPrompt } from "./prompt-builder.js";
 import { parseVerifyResponse } from "./gates.js";
 import { NdjsonLogger } from "../pipeline/logger.js";
+import { SessionProgress } from "../pipeline/progress.js";
 
 /** Default model for verification sessions — sonnet for quality assessment */
 export const DEFAULT_VERIFY_MODEL = "claude-sonnet-4-6";
@@ -40,14 +41,13 @@ export async function verify(
 
   const abortController = new AbortController();
   if (options.signal) {
-    options.signal.addEventListener(
-      "abort",
-      () => abortController.abort(),
-      { once: true },
-    );
+    options.signal.addEventListener("abort", () => abortController.abort(), {
+      once: true,
+    });
   }
 
   let responseText = "";
+  const progress = new SessionProgress("verify");
 
   try {
     for await (const msg of query({
@@ -61,9 +61,10 @@ export async function verify(
         settingSources: [],
         persistSession: false,
         abortController,
-        env: { CLAUDE_CODE_MAX_OUTPUT_TOKENS: "16000" },
+        env: { CLAUDE_CODE_MAX_OUTPUT_TOKENS: "16000", CLAUDECODE: "" },
       },
     })) {
+      progress.onMessage(msg);
       await logger.write(msg);
 
       // Collect text from assistant messages

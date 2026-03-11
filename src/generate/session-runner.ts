@@ -2,12 +2,17 @@ import * as fs from "node:fs/promises";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Plan, Variant, PlanMetadata } from "../types/plan.js";
 import type { GenerateConfig } from "../types/config.js";
-import { PlanExtractionError, VariantError, AllVariantsFailedError } from "../types/errors.js";
+import {
+  PlanExtractionError,
+  VariantError,
+  AllVariantsFailedError,
+} from "../types/errors.js";
 import { NdjsonLogger } from "../pipeline/logger.js";
+import { SessionProgress } from "../pipeline/progress.js";
 import type { VariantPrompt } from "./prompt-builder.js";
 
 function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Extract a Plan from SDK messages and the file written by the Write tool */
@@ -18,16 +23,18 @@ export async function extractPlan(
 ): Promise<Plan> {
   // Find the result message for metadata
   const resultMsg = messages.find(
-    (m: any) => m.type === "result" && m.subtype === "success"
+    (m: any) => m.type === "result" && m.subtype === "success",
   ) as any;
 
   if (!resultMsg) {
     const errorMsg = messages.find(
-      (m: any) => m.type === "result" && m.subtype !== "success"
+      (m: any) => m.type === "result" && m.subtype !== "success",
     ) as any;
     throw new PlanExtractionError(
       variant.name,
-      errorMsg ? `Session ended with: ${errorMsg.subtype}` : "No result message found",
+      errorMsg
+        ? `Session ended with: ${errorMsg.subtype}`
+        : "No result message found",
     );
   }
 
@@ -49,7 +56,10 @@ export async function extractPlan(
   }
 
   if (!content) {
-    throw new PlanExtractionError(variant.name, "No plan file and no text content");
+    throw new PlanExtractionError(
+      variant.name,
+      "No plan file and no text content",
+    );
   }
 
   // Build metadata from result message
@@ -90,13 +100,16 @@ async function runVariantSession(
 
   // Link to parent signal (for SIGINT/SIGTERM)
   if (parentSignal) {
-    parentSignal.addEventListener("abort", () => abortController.abort(), { once: true });
+    parentSignal.addEventListener("abort", () => abortController.abort(), {
+      once: true,
+    });
   }
 
   // Timeout
   const timeout = setTimeout(() => abortController.abort(), config.timeoutMs);
 
   const messages: unknown[] = [];
+  const progress = new SessionProgress(`generate:${vp.variant.name}`);
 
   try {
     for await (const msg of query({
@@ -109,18 +122,22 @@ async function runVariantSession(
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,
         cwd: config.workDir || undefined,
-        additionalDirectories: config.additionalDirs.length > 0 ? config.additionalDirs : undefined,
+        additionalDirectories:
+          config.additionalDirs.length > 0 ? config.additionalDirs : undefined,
         systemPrompt: config.systemPrompt,
-        settingSources: [],
+        settingSources: config.settingSources,
+        strictMcpConfig: config.strictMcp,
         persistSession: false,
         abortController,
         env: {
           ...process.env,
           CLAUDE_CODE_MAX_OUTPUT_TOKENS: "128000",
+          CLAUDECODE: "",
         },
       },
     })) {
       messages.push(msg);
+      progress.onMessage(msg);
       await logger.write(msg);
     }
 
@@ -151,26 +168,27 @@ export async function runParallelSessions(
 
   // Log failures
   const failed = results.filter(
-    (r): r is PromiseRejectedResult => r.status === "rejected"
+    (r): r is PromiseRejectedResult => r.status === "rejected",
   );
   for (const f of failed) {
-    const err = f.reason instanceof VariantError
-      ? f.reason
-      : new VariantError("unknown", f.reason);
+    const err =
+      f.reason instanceof VariantError
+        ? f.reason
+        : new VariantError("unknown", f.reason);
     console.error(`✗ ${err.variant}: ${err.message}`);
   }
 
   // Collect successes
   const succeeded = results
     .filter((r): r is PromiseFulfilledResult<Plan> => r.status === "fulfilled")
-    .map(r => r.value);
+    .map((r) => r.value);
 
   if (succeeded.length === 0) {
     throw new AllVariantsFailedError(
-      failed.map(f =>
+      failed.map((f) =>
         f.reason instanceof VariantError
           ? f.reason
-          : new VariantError("unknown", f.reason)
+          : new VariantError("unknown", f.reason),
       ),
     );
   }
@@ -186,27 +204,40 @@ export async function runSequentialSessions(
   parentSignal?: AbortSignal,
 ): Promise<Plan[]> {
   if (prompts.length < 3) {
-    console.warn("Warning: sequential diversity requires >= 3 variants — falling back to parallel");
+    console.warn(
+      "Warning: sequential diversity requires >= 3 variants — falling back to parallel",
+    );
     return runParallelSessions(prompts, config, parentSignal);
   }
 
   // Wave 1: first half in parallel
   const midpoint = Math.ceil(prompts.length / 2);
   const wave1Prompts = prompts.slice(0, midpoint);
-  const wave1Plans = await runParallelSessions(wave1Prompts, config, parentSignal);
+  const wave1Plans = await runParallelSessions(
+    wave1Prompts,
+    config,
+    parentSignal,
+  );
 
   // Build skeleton from wave 1 (first 20 lines of each plan)
   const skeleton = wave1Plans
-    .map(p => `### ${p.variant.name}\n${p.content.split("\n").slice(0, 20).join("\n")}`)
+    .map(
+      (p) =>
+        `### ${p.variant.name}\n${p.content.split("\n").slice(0, 20).join("\n")}`,
+    )
     .join("\n\n");
 
   // Wave 2: remaining variants with skeleton context
-  const wave2Prompts = prompts.slice(midpoint).map(vp => ({
+  const wave2Prompts = prompts.slice(midpoint).map((vp) => ({
     ...vp,
     fullPrompt: `${vp.fullPrompt}\n\n## Previous plans (skeleton — for structural diversity)\n${skeleton}\n\nProduce a plan that is STRUCTURALLY DIFFERENT from the above.`,
   }));
 
-  const wave2Plans = await runParallelSessions(wave2Prompts, config, parentSignal);
+  const wave2Plans = await runParallelSessions(
+    wave2Prompts,
+    config,
+    parentSignal,
+  );
 
   return [...wave1Plans, ...wave2Plans];
 }

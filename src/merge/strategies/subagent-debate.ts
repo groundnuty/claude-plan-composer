@@ -6,6 +6,7 @@ import type { MergeConfig } from "../../types/config.js";
 import type { EvalResult } from "../../types/evaluation.js";
 import { MergeError } from "../../types/errors.js";
 import { NdjsonLogger } from "../../pipeline/logger.js";
+import { SessionProgress } from "../../pipeline/progress.js";
 import type { MergeStrategy } from "../strategy.js";
 import { embedPlan, buildMergeOutputInstruction } from "../prompt-builder.js";
 
@@ -113,6 +114,7 @@ export class SubagentDebateStrategy implements MergeStrategy {
     const logPath = mergePlanPath.replace(/\.md$/, ".log");
     const logger = new NdjsonLogger(logPath);
     const messages: unknown[] = [];
+    const progress = new SessionProgress("merge:subagent-debate");
 
     try {
       for await (const msg of query({
@@ -125,16 +127,19 @@ export class SubagentDebateStrategy implements MergeStrategy {
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
           cwd: config.workDir || undefined,
-          settingSources: [],
+          settingSources: config.settingSources,
+          strictMcpConfig: config.strictMcp,
           persistSession: false,
           agents,
           env: {
             ...process.env,
             CLAUDE_CODE_MAX_OUTPUT_TOKENS: "128000",
+            CLAUDECODE: "",
           },
         },
       })) {
         messages.push(msg);
+        progress.onMessage(msg);
         await logger.write(msg);
       }
     } finally {

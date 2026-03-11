@@ -5,6 +5,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { Variant } from "../types/plan.js";
 import type { GenerateConfig } from "../types/config.js";
 import { LensGenerationError } from "../types/errors.js";
+import { SessionProgress } from "../pipeline/progress.js";
 
 /** Build the prompt that asks Claude to generate analytical perspectives */
 export function buildLensPrompt(basePrompt: string, lensCount: number): string {
@@ -48,10 +49,14 @@ export function parseLensResponse(yamlText: string): Variant[] {
     .replace(/\n```\s*$/m, "")
     .trim();
 
-  const parsed = yaml.load(cleaned) as { perspectives?: Array<{ name: string; guidance: string }> };
+  const parsed = yaml.load(cleaned) as {
+    perspectives?: Array<{ name: string; guidance: string }>;
+  };
 
   if (!parsed?.perspectives || !Array.isArray(parsed.perspectives)) {
-    throw new LensGenerationError("Response did not contain 'perspectives' array");
+    throw new LensGenerationError(
+      "Response did not contain 'perspectives' array",
+    );
   }
 
   const seen = new Set<string>();
@@ -92,6 +97,8 @@ export async function generateLenses(
     config.lensTimeoutMs,
   );
 
+  const progress = new SessionProgress("generate:auto-lenses");
+
   try {
     let responseText = "";
 
@@ -100,7 +107,7 @@ export async function generateLenses(
       options: {
         model: config.lensModel,
         maxTurns: 3,
-        tools: [],  // lens generation doesn't need tools
+        tools: [], // lens generation doesn't need tools
         permissionMode: "bypassPermissions",
         allowDangerouslySkipPermissions: true,
         settingSources: [],
@@ -108,9 +115,11 @@ export async function generateLenses(
         env: {
           ...process.env,
           CLAUDE_CODE_MAX_OUTPUT_TOKENS: "4000",
+          CLAUDECODE: "",
         },
       },
     })) {
+      progress.onMessage(msg);
       if (msg.type === "assistant" && "message" in msg) {
         const textBlocks = (msg.message as any).content
           ?.filter((b: any) => b.type === "text")
@@ -125,14 +134,21 @@ export async function generateLenses(
     const variants = parseLensResponse(responseText);
 
     if (variants.length === 0) {
-      console.warn("Warning: no valid lenses generated — falling back to config variants");
+      console.warn(
+        "Warning: no valid lenses generated — falling back to config variants",
+      );
       return [...config.variants];
     }
 
     // Save lenses for reproducibility
     await fs.writeFile(
       path.join(runDir, "auto-lenses.yaml"),
-      yaml.dump({ perspectives: variants.map(v => ({ name: v.name, guidance: v.guidance })) }),
+      yaml.dump({
+        perspectives: variants.map((v) => ({
+          name: v.name,
+          guidance: v.guidance,
+        })),
+      }),
     );
 
     return variants;

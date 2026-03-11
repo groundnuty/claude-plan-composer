@@ -6,6 +6,7 @@ import type { MergeConfig } from "../../types/config.js";
 import type { EvalResult } from "../../types/evaluation.js";
 import { MergeError } from "../../types/errors.js";
 import { NdjsonLogger } from "../../pipeline/logger.js";
+import { SessionProgress } from "../../pipeline/progress.js";
 import type { MergeStrategy } from "../strategy.js";
 import { buildMergePrompt } from "../prompt-builder.js";
 
@@ -23,6 +24,7 @@ export class SimpleStrategy implements MergeStrategy {
     const logger = new NdjsonLogger(logPath);
 
     const messages: unknown[] = [];
+    const progress = new SessionProgress("merge:simple");
 
     try {
       for await (const msg of query({
@@ -35,16 +37,19 @@ export class SimpleStrategy implements MergeStrategy {
           permissionMode: "bypassPermissions",
           allowDangerouslySkipPermissions: true,
           cwd: config.workDir || undefined,
-          settingSources: [],
+          settingSources: config.settingSources,
+          strictMcpConfig: config.strictMcp,
           persistSession: false,
           systemPrompt: config.systemPrompt,
           env: {
             ...process.env,
             CLAUDE_CODE_MAX_OUTPUT_TOKENS: "128000",
+            CLAUDECODE: "",
           },
         },
       })) {
         messages.push(msg);
+        progress.onMessage(msg);
         await logger.write(msg);
       }
     } finally {
@@ -53,7 +58,7 @@ export class SimpleStrategy implements MergeStrategy {
 
     // Extract result
     const resultMsg = messages.find(
-      (m: any) => m.type === "result" && m.subtype === "success"
+      (m: any) => m.type === "result" && m.subtype === "success",
     ) as any;
 
     if (!resultMsg) {
@@ -93,7 +98,7 @@ export class SimpleStrategy implements MergeStrategy {
 
     return {
       content,
-      comparison: [],  // TODO: extract from content or separate JSON
+      comparison: [], // TODO: extract from content or separate JSON
       strategy: this.name,
       metadata,
     };
