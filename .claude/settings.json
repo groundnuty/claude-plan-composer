@@ -36,21 +36,7 @@
     "allowUnsandboxedCommands": true,
     "excludedCommands": ["ssh:*", "scp:*", "rsync:*", "devbox:*", "nix:*", "git:*", "gpg:*", "gpg-agent:*"],
     "network": {
-      "allowedDomains": [
-        "cache.nixos.org",
-        "*.nixos.org",
-        "releases.nixos.org",
-        "channels.nixos.org",
-        "*.cachix.org",
-        "nix-community.cachix.org",
-        "github.com",
-        "api.github.com",
-        "*.githubusercontent.com",
-        "search.devbox.sh",
-        "*.devbox.sh",
-        "registry.npmjs.org",
-        "registry.hub.docker.com"
-      ]
+      "allowedDomains": ["*"]
     },
     "filesystem": {
       "allowWrite": [
@@ -78,11 +64,22 @@
   },
   "enabledPlugins": {
     "superpowers@claude-plugins-official": true,
-    "everything-claude-code@everything-claude-code": true,
     "commit-commands@claude-plugins-official": true,
     "feature-dev@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
-    "holistic-linting@jamie-bitflight-skills": true
+    "code-review@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "vtsls@claude-code-lsps": true,
+    "everything-claude-code@everything-claude-code": false,
+    "holistic-linting@jamie-bitflight-skills": false
+  },
+  "extraKnownMarketplaces": {
+    "claude-code-lsps": {
+      "source": {
+        "source": "github",
+        "repo": "Piebald-AI/claude-code-lsps"
+      }
+    }
   },
   "hooks": {
     "SessionStart": [

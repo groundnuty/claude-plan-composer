@@ -52,6 +52,12 @@ One-off commands: `devbox run -- npx vitest run test/generate/prompt-builder.tes
 - **Plan embedding**: XML tags + plaintext NOTE prefix (not HTML comments)
 - **`import type`**: Enforced by `verbatimModuleSyntax` in tsconfig
 
+## Plugins
+
+superpowers, commit-commands, feature-dev, context7, code-review, security-guidance, vtsls (TypeScript LSP).
+- Do NOT enable everything-claude-code or holistic-linting (~42 skill visibility limit)
+- vtsls requires global `@vtsls/language-server` (exception to devbox-only rule)
+
 ## Hooks
 
 - **PostToolUse**: ESLint + tsc on `.ts` files after Edit/Write/MultiEdit
