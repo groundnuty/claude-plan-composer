@@ -11,10 +11,12 @@ import * as path from "node:path";
 import { describe, it, expect, afterAll } from "vitest";
 import { generate } from "../../src/generate/index.js";
 import { merge } from "../../src/merge/index.js";
-import { writePlanSet } from "../../src/pipeline/io.js";
 import type { GenerateConfig } from "../../src/types/config.js";
 import type { MergeConfig } from "../../src/types/config.js";
-import { GenerateConfigSchema, MergeConfigSchema } from "../../src/types/config.js";
+import {
+  GenerateConfigSchema,
+  MergeConfigSchema,
+} from "../../src/types/config.js";
 
 const TMPDIR = process.env["TMPDIR"] ?? "/private/tmp/claude-501";
 const outputDir = path.join(
@@ -43,10 +45,19 @@ const mergeConfig: MergeConfig = MergeConfigSchema.parse({
 
 const PROMPT = "Create a plan for a hello world CLI app in Python";
 
-// Skip the entire suite if no API key is available
-const suite = process.env["ANTHROPIC_API_KEY"]
-  ? describe
-  : describe.skip;
+// Skip unless Claude auth is available (API key or logged-in Claude Code CLI)
+async function hasClaudeAuth(): Promise<boolean> {
+  if (process.env["ANTHROPIC_API_KEY"]) return true;
+  try {
+    const { execFileSync } = await import("node:child_process");
+    execFileSync("claude", ["--version"], { stdio: "ignore", timeout: 5_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const suite = (await hasClaudeAuth()) ? describe : describe.skip;
 
 suite("E2E: generate -> merge pipeline", () => {
   let runDir: string;
@@ -60,13 +71,22 @@ suite("E2E: generate -> merge pipeline", () => {
   });
 
   it("full pipeline: generate 2 variants then merge", async () => {
+    const t0 = Date.now();
+    const elapsed = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
+
     // --- Generate phase ---
+    console.log(
+      `[${elapsed()}] Starting generate phase (2 variants, model=${genConfig.model})...`,
+    );
     const planSet = await generate(genConfig, {
       prompt: PROMPT,
       outputDir,
     });
 
     runDir = planSet.runDir;
+    console.log(
+      `[${elapsed()}] Generate complete → ${planSet.plans.length} plans`,
+    );
 
     // PlanSet has 2 plans
     expect(planSet.plans).toHaveLength(2);
@@ -74,40 +94,66 @@ suite("E2E: generate -> merge pipeline", () => {
     // Each plan has content > 500 bytes
     for (const plan of planSet.plans) {
       const sizeBytes = Buffer.byteLength(plan.content, "utf-8");
+      console.log(
+        `  ${plan.variant.name}: ${sizeBytes} bytes, ${plan.metadata.durationMs}ms, $${plan.metadata.costUsd.toFixed(4)}`,
+      );
       expect(sizeBytes).toBeGreaterThan(500);
     }
 
     // Plan files were written to disk by the session runner
     const concisePath = path.join(runDir, "plan-concise.md");
     const detailedPath = path.join(runDir, "plan-detailed.md");
-    const conciseExists = await fs.stat(concisePath).then(() => true, () => false);
-    const detailedExists = await fs.stat(detailedPath).then(() => true, () => false);
+    const conciseExists = await fs.stat(concisePath).then(
+      () => true,
+      () => false,
+    );
+    const detailedExists = await fs.stat(detailedPath).then(
+      () => true,
+      () => false,
+    );
     expect(conciseExists).toBe(true);
     expect(detailedExists).toBe(true);
 
     // NDJSON log files exist in the run directory
     const conciseLogPath = path.join(runDir, "plan-concise.log");
     const detailedLogPath = path.join(runDir, "plan-detailed.log");
-    const conciseLogExists = await fs.stat(conciseLogPath).then(() => true, () => false);
-    const detailedLogExists = await fs.stat(detailedLogPath).then(() => true, () => false);
+    const conciseLogExists = await fs.stat(conciseLogPath).then(
+      () => true,
+      () => false,
+    );
+    const detailedLogExists = await fs.stat(detailedLogPath).then(
+      () => true,
+      () => false,
+    );
     expect(conciseLogExists).toBe(true);
     expect(detailedLogExists).toBe(true);
 
     // --- Merge phase ---
+    console.log(
+      `[${elapsed()}] Starting merge phase (strategy=${mergeConfig.strategy}, model=${mergeConfig.model})...`,
+    );
     const mergeResult = await merge(planSet, mergeConfig);
 
     // MergeResult has content > 500 bytes
     const mergeSizeBytes = Buffer.byteLength(mergeResult.content, "utf-8");
+    console.log(
+      `[${elapsed()}] Merge complete → ${mergeSizeBytes} bytes, $${mergeResult.metadata.totalCostUsd.toFixed(4)}`,
+    );
     expect(mergeSizeBytes).toBeGreaterThan(500);
 
     // merged-plan.md was written to disk by the merge strategy
     const mergedPlanPath = path.join(runDir, "merged-plan.md");
-    const mergedPlanExists = await fs.stat(mergedPlanPath).then(() => true, () => false);
+    const mergedPlanExists = await fs.stat(mergedPlanPath).then(
+      () => true,
+      () => false,
+    );
     expect(mergedPlanExists).toBe(true);
 
     const mergedContent = await fs.readFile(mergedPlanPath, "utf-8");
     expect(Buffer.byteLength(mergedContent, "utf-8")).toBeGreaterThan(500);
-  }, 180_000);
+
+    console.log(`[${elapsed()}] All assertions passed`);
+  }, 600_000);
 
   it("NDJSON log files contain valid JSON with expected message types", async () => {
     // This test depends on runDir being set by the previous test.
@@ -124,10 +170,7 @@ suite("E2E: generate -> merge pipeline", () => {
     let foundAssistantOrResult = false;
 
     for (const logFile of logFiles) {
-      const logContent = await fs.readFile(
-        path.join(runDir, logFile),
-        "utf-8",
-      );
+      const logContent = await fs.readFile(path.join(runDir, logFile), "utf-8");
 
       const lines = logContent.trimEnd().split("\n");
       expect(lines.length).toBeGreaterThan(0);
@@ -138,10 +181,7 @@ suite("E2E: generate -> merge pipeline", () => {
         expect(parsed).toBeDefined();
         expect(typeof parsed).toBe("object");
 
-        if (
-          parsed.type === "assistant" ||
-          parsed.type === "result"
-        ) {
+        if (parsed.type === "assistant" || parsed.type === "result") {
           foundAssistantOrResult = true;
         }
       }
