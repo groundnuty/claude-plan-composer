@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Development wrapper — runs the CLI via tsx (no build step needed)
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export TMPDIR="${TMPDIR_ORIGINAL:-/tmp}"
+exec devbox run -- npx tsx "$SCRIPT_DIR/src/cli/index.ts" "$@"
