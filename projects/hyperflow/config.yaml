@@ -1,0 +1,42 @@
+# HyperFlow Conductor — domain-specific generation config
+#
+# Usage: ./cpc generate projects/hyperflow/prompt.md --config projects/hyperflow/config.yaml
+
+additional_dirs:
+  - ../knowledge
+  - ../1000genome-workflow
+  - ../workflow-profiler
+  - ../../hyperflow-k8s-deployment
+  - ../../agentic-systems
+  - ../../hyperflow
+
+variants:
+  - name: baseline
+    guidance: ""
+
+  - name: simplicity
+    guidance: |
+      Prioritize simplicity — find the smallest possible MVP that still demonstrates
+      the full pipeline. Minimize dependencies and moving parts. Question whether each
+      component is truly needed for Stage 1. Fewer files is better. Consider whether
+      mcp-agent is needed at all for MVP or if raw MCP SDK calls would be simpler.
+
+  - name: framework-depth
+    guidance: |
+      Focus on mcp-agent framework patterns — research the mcp-agent GitHub repo,
+      examples, and how other projects use it. Show detailed code examples for each
+      pipeline phase. Include exact imports, error handling patterns, and how
+      AugmentedLLM works with tool calls. Also research kr8s async patterns for K8s
+      test assertions. Show code, not just descriptions.
+
+  - name: k8s-ops
+    guidance: |
+      Focus on K8s deployment depth and operability. Replicate the exact deployment
+      sequence from fast-test.sh as numbered steps with helm/kubectl commands and
+      flags. Include ResourceQuota creation, worker pool mode decisions, NFS PVC
+      setup, node labels, and job-template variables. Justify k3d vs Kind vs minikube
+      with comparative data (startup time, memory, CI suitability). Use kr8s (async
+      Python K8s client) instead of subprocess kubectl for test assertions. Document
+      HyperFlow engine internals (REST API, workflow.json format, env vars) and cite
+      relevant academic papers with DOIs. Show the full 10-phase pipeline from the
+      knowledge base, not a simplified version.

@@ -1,0 +1,27 @@
+# HyperFlow Conductor — domain-specific merge config
+#
+# Usage: ./cpc merge <plans-dir> --config projects/hyperflow/merge-config.yaml
+
+project_description: "the HyperFlow Conductor"
+role: "an expert technical architect"
+
+dimensions:
+  - Staging strategy (stages, granularity, boundaries)
+  - MVP scope (what's in/out, validation gates)
+  - K8s testing strategy (provider, client, fixtures)
+  - Deployment detail (steps, commands, specificity)
+  - Code architecture (package layout, modularity, models)
+  - Reference documentation (academic papers, HyperFlow internals)
+  - Implementation planning (PR breakdown, acceptance criteria)
+  - Workflow delivery mechanism
+
+advocate_instructions: |
+  Argue for its approach in each dimension. Challenge the other
+  advocates' plans where yours is stronger. Concede where yours is weaker.
+  Be specific — cite exact sections, trade-offs, and code examples.
+
+output_goal: |
+  The merged plan must be standalone — a developer should be able to
+  implement from it without referencing the source plans.
+
+output_title: "HyperFlow Conductor Implementation Plan (Merged)"

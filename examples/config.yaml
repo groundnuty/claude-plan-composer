@@ -1,0 +1,11 @@
+# Example generate config — lightweight for quick tests
+model: haiku
+max_turns: 10
+timeout_ms: 120000
+min_output_bytes: 500
+
+variants:
+  - name: concise
+    guidance: "Be concise and minimal. Focus on the simplest viable approach."
+  - name: detailed
+    guidance: "Be detailed and thorough. Include code examples and edge cases."

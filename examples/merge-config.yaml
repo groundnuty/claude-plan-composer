@@ -1,0 +1,6 @@
+# Example merge config — lightweight for quick tests
+model: haiku
+max_turns: 10
+timeout_ms: 120000
+strategy: simple
+comparison_method: holistic
