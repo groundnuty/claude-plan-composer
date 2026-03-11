@@ -4,11 +4,24 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { Command } from "commander";
 
-import { resolveGenerateConfig, resolveMergeConfig } from "../pipeline/config-resolver.js";
-import { writePlanSet, readPlanSet, writeMergeResult } from "../pipeline/io.js";
+import {
+  resolveGenerateConfig,
+  resolveMergeConfig,
+} from "../pipeline/config-resolver.js";
+import {
+  writePlanSet,
+  readPlanSet,
+  writeMergeResult,
+  writeEvalResult,
+  writeVerifyResult,
+} from "../pipeline/io.js";
 import { generate } from "../generate/index.js";
 import type { GenerateOptions } from "../generate/index.js";
 import { merge } from "../merge/index.js";
+import { evaluate } from "../evaluate/index.js";
+import type { EvaluateOptions } from "../evaluate/index.js";
+import { verify } from "../verify/index.js";
+import type { VerifyOptions } from "../verify/index.js";
 import { CpcError } from "../types/errors.js";
 import type { PipelineResult } from "../types/pipeline.js";
 
@@ -53,6 +66,39 @@ function printMergeSummary(dir: string, strategy: string): void {
   console.error(`Strategy: ${strategy}`);
 }
 
+/** Print an eval summary to stderr. */
+function printEvalSummary(
+  convergence: number,
+  gaps: readonly { dimension: string; description: string }[],
+  summary: string,
+): void {
+  console.error(`Convergence: ${(convergence * 100).toFixed(1)}%`);
+  console.error(`Gaps: ${gaps.length}`);
+  for (const gap of gaps) {
+    console.error(`  [${gap.dimension}] ${gap.description}`);
+  }
+  console.error(`Summary: ${summary}`);
+}
+
+/** Print verify gate results to stderr. */
+function printVerifySummary(
+  gates: readonly {
+    gate: string;
+    pass: boolean;
+    findings: readonly string[];
+  }[],
+  pass: boolean,
+): void {
+  console.error(`Verification: ${pass ? "PASS" : "FAIL"}`);
+  for (const gate of gates) {
+    const status = gate.pass ? "PASS" : "FAIL";
+    console.error(`  [${gate.gate.toUpperCase()}] ${status}`);
+    for (const finding of gate.findings) {
+      console.error(`    - ${finding}`);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // CLI definition
 // ---------------------------------------------------------------------------
@@ -72,7 +118,10 @@ program
   .argument("<prompt-file>", "Primary prompt file")
   .argument("[extra-files...]", "Additional prompt files (multi-file mode)")
   .option("--config <file>", "Config file path")
-  .option("--multi", "Multi-file mode: treat extra positional args as variant files")
+  .option(
+    "--multi",
+    "Multi-file mode: treat extra positional args as variant files",
+  )
   .option("--context <file>", "Shared context file (multi-file mode)")
   .option("--debug [variant]", "Debug mode: sonnet, 20 turns, single variant")
   .option("--dry-run", "Show resolved config and exit")
@@ -144,7 +193,10 @@ program
   .description("Merge generated plans from a directory")
   .argument("<plans-dir>", "Directory containing plan-*.md files")
   .option("--config <file>", "Merge config file path")
-  .option("--strategy <name>", "Merge strategy: simple, agent-teams, subagent-debate")
+  .option(
+    "--strategy <name>",
+    "Merge strategy: simple, agent-teams, subagent-debate",
+  )
   .option("--comparison <method>", "Comparison method: holistic, pairwise")
   .option("--model <name>", "Override model")
   .option("--dry-run", "Show resolved config and exit")
@@ -153,7 +205,8 @@ program
       const overrides: Record<string, unknown> = {};
       if (opts.model !== undefined) overrides.model = opts.model;
       if (opts.strategy !== undefined) overrides.strategy = opts.strategy;
-      if (opts.comparison !== undefined) overrides.comparisonMethod = opts.comparison;
+      if (opts.comparison !== undefined)
+        overrides.comparisonMethod = opts.comparison;
 
       const config = await resolveMergeConfig({
         cliConfigPath: opts.config,
@@ -181,6 +234,121 @@ program
   });
 
 // ---------------------------------------------------------------------------
+// evaluate
+// ---------------------------------------------------------------------------
+
+program
+  .command("evaluate")
+  .description("Evaluate generated plans from a directory")
+  .argument("<plans-dir>", "Directory containing plan-*.md files")
+  .option("--config <file>", "Merge config file path")
+  .option("--model <name>", "Model for evaluation (default: haiku)")
+  .action(async (plansDir: string, opts) => {
+    try {
+      const resolvedDir = path.resolve(plansDir);
+
+      const config = await resolveMergeConfig({
+        cliConfigPath: opts.config,
+        cliOverrides: {},
+      });
+
+      const planSet = await readPlanSet(resolvedDir);
+
+      const evalOpts: EvaluateOptions = {
+        model: opts.model,
+        signal: controller.signal,
+      };
+
+      const evalResult = await evaluate(planSet, config, evalOpts);
+      await writeEvalResult(evalResult, planSet.runDir);
+
+      printEvalSummary(
+        evalResult.convergence,
+        evalResult.gaps,
+        evalResult.summary,
+      );
+    } catch (err) {
+      if (err instanceof CpcError) {
+        console.error(`Error [${err.code}]: ${err.message}`);
+      } else {
+        console.error(err);
+      }
+      process.exitCode = 1;
+    }
+  });
+
+// ---------------------------------------------------------------------------
+// verify
+// ---------------------------------------------------------------------------
+
+program
+  .command("verify")
+  .description("Verify a merged plan against its source plans")
+  .argument(
+    "<plans-dir>",
+    "Directory containing merged-plan.md and plan-*.md files",
+  )
+  .option("--config <file>", "Merge config file path")
+  .option("--model <name>", "Model for verification (default: sonnet)")
+  .action(async (plansDir: string, opts) => {
+    try {
+      const resolvedDir = path.resolve(plansDir);
+
+      const planSet = await readPlanSet(resolvedDir);
+
+      const mergedContent = await fs.readFile(
+        path.join(resolvedDir, "merged-plan.md"),
+        "utf-8",
+      );
+
+      const minimalMergeResult = {
+        content: mergedContent,
+        comparison: [] as const,
+        strategy: "simple" as const,
+        metadata: {
+          model: opts.model ?? "unknown",
+          turns: 0,
+          durationMs: 0,
+          durationApiMs: 0,
+          tokenUsage: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadInputTokens: 0,
+            cacheCreationInputTokens: 0,
+            costUsd: 0,
+          },
+          costUsd: 0,
+          stopReason: null,
+          sessionId: "",
+          sourcePlans: planSet.plans.length,
+          totalCostUsd: 0,
+        },
+      };
+
+      const verifyOpts: VerifyOptions = {
+        model: opts.model,
+        signal: controller.signal,
+      };
+
+      const verifyResult = await verify(
+        minimalMergeResult,
+        planSet,
+        verifyOpts,
+      );
+      await writeVerifyResult(verifyResult, resolvedDir);
+
+      printVerifySummary(verifyResult.gates, verifyResult.pass);
+    } catch (err) {
+      if (err instanceof CpcError) {
+        console.error(`Error [${err.code}]: ${err.message}`);
+      } else {
+        console.error(err);
+      }
+      process.exitCode = 1;
+    }
+  });
+
+// ---------------------------------------------------------------------------
 // run (generate + merge)
 // ---------------------------------------------------------------------------
 
@@ -191,7 +359,10 @@ program
   .argument("[extra-files...]", "Additional prompt files (multi-file mode)")
   // generate flags
   .option("--config <file>", "Generate config file path")
-  .option("--multi", "Multi-file mode: treat extra positional args as variant files")
+  .option(
+    "--multi",
+    "Multi-file mode: treat extra positional args as variant files",
+  )
   .option("--context <file>", "Shared context file (multi-file mode)")
   .option("--debug [variant]", "Debug mode: sonnet, 20 turns, single variant")
   .option("--dry-run", "Show resolved configs and exit")
@@ -203,8 +374,15 @@ program
   .option("--budget <usd>", "Override budget cap in USD", coerceFloat)
   // merge flags
   .option("--merge-config <file>", "Merge config file path")
-  .option("--strategy <name>", "Merge strategy: simple, agent-teams, subagent-debate")
+  .option(
+    "--strategy <name>",
+    "Merge strategy: simple, agent-teams, subagent-debate",
+  )
   .option("--comparison <method>", "Comparison method: holistic, pairwise")
+  // pipeline flags
+  .option("--skip-eval", "Skip pre-merge evaluation")
+  .option("--verify", "Run post-merge verification")
+  .option("--verify-model <name>", "Model for verification (default: sonnet)")
   .action(async (promptFile: string, extraFiles: string[], opts) => {
     try {
       // Resolve generate config
@@ -225,7 +403,8 @@ program
       const mergeOverrides: Record<string, unknown> = {};
       if (opts.model !== undefined) mergeOverrides.model = opts.model;
       if (opts.strategy !== undefined) mergeOverrides.strategy = opts.strategy;
-      if (opts.comparison !== undefined) mergeOverrides.comparisonMethod = opts.comparison;
+      if (opts.comparison !== undefined)
+        mergeOverrides.comparisonMethod = opts.comparison;
 
       const mergeConfig = await resolveMergeConfig({
         cliConfigPath: opts.mergeConfig,
@@ -233,7 +412,9 @@ program
       });
 
       if (opts.dryRun) {
-        console.log(JSON.stringify({ generate: genConfig, merge: mergeConfig }, null, 2));
+        console.log(
+          JSON.stringify({ generate: genConfig, merge: mergeConfig }, null, 2),
+        );
         return;
       }
 
@@ -261,15 +442,43 @@ program
       const variantNames = planSet.plans.map((p) => p.variant.name);
       printGenerateSummary(planSet.runDir, planSet.plans.length, variantNames);
 
-      // 2. Merge
-      const mergeResult = await merge(planSet, mergeConfig);
+      // 2. Evaluate (optional — skipped when --skip-eval is set)
+      let evalResult = undefined;
+      if (!opts.skipEval) {
+        evalResult = await evaluate(planSet, mergeConfig, {
+          signal: controller.signal,
+        });
+        await writeEvalResult(evalResult, planSet.runDir);
+        printEvalSummary(
+          evalResult.convergence,
+          evalResult.gaps,
+          evalResult.summary,
+        );
+      }
+
+      // 3. Merge
+      const mergeResult = await merge(planSet, mergeConfig, evalResult);
       await writeMergeResult(mergeResult, planSet.runDir);
 
       printMergeSummary(planSet.runDir, mergeResult.strategy);
 
+      // 4. Verify (optional — enabled when --verify is set)
+      let verifyResult = undefined;
+      if (opts.verify) {
+        const verifyOpts: VerifyOptions = {
+          model: opts.verifyModel,
+          signal: controller.signal,
+        };
+        verifyResult = await verify(mergeResult, planSet, verifyOpts);
+        await writeVerifyResult(verifyResult, planSet.runDir);
+        printVerifySummary(verifyResult.gates, verifyResult.pass);
+      }
+
       const pipelineResult: PipelineResult = {
         planSet,
         mergeResult,
+        evalResult,
+        verifyResult,
       };
 
       // Print final pipeline summary to stderr

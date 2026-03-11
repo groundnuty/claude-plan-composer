@@ -3,20 +3,28 @@ import type { GenerateOptions } from "../generate/index.js";
 import { merge } from "../merge/index.js";
 import { evaluate } from "../evaluate/index.js";
 import type { EvaluateOptions } from "../evaluate/index.js";
-import { writePlanSet, writeMergeResult, writeEvalResult } from "./io.js";
+import { verify } from "../verify/index.js";
+import type { VerifyOptions } from "../verify/index.js";
+import {
+  writePlanSet,
+  writeMergeResult,
+  writeEvalResult,
+  writeVerifyResult,
+} from "./io.js";
 import type { GenerateConfig, MergeConfig } from "../types/config.js";
 import type { PipelineResult } from "../types/pipeline.js";
 
 export interface RunOptions {
   readonly generateOptions: GenerateOptions;
   readonly evaluateOptions?: EvaluateOptions;
+  readonly verifyOptions?: VerifyOptions;
   readonly skipEval?: boolean;
+  readonly verify?: boolean;
   readonly signal?: AbortSignal;
 }
 
 /**
- * Run the full pipeline: generate → evaluate → merge.
- * Verify phase will be added in Phase C.
+ * Run the full pipeline: generate → evaluate → merge → verify.
  */
 export async function runPipeline(
   genConfig: GenerateConfig,
@@ -48,5 +56,15 @@ export async function runPipeline(
   // Step 5: Persist merge result
   await writeMergeResult(mergeResult, planSet.runDir);
 
-  return { planSet, mergeResult, evalResult };
+  // Step 6: Verify merged plan (optional — enabled when verify flag is set)
+  let verifyResult = undefined;
+  if (options.verify) {
+    verifyResult = await verify(mergeResult, planSet, {
+      ...options.verifyOptions,
+      signal: options.signal,
+    });
+    await writeVerifyResult(verifyResult, planSet.runDir);
+  }
+
+  return { planSet, mergeResult, evalResult, verifyResult };
 }
