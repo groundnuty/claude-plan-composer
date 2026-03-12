@@ -1,0 +1,92 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DayTrader T2 — merge config for claude-plan-composer-ts
+#
+# C4 configuration: pairwise comparison, 5 weighted dimensions.
+# Run: npx tsx src/cli/index.ts run --multi \
+#        --config projects/daytrader-t2/config.yaml \
+#        --merge-config projects/daytrader-t2/merge-config.yaml \
+#        --context projects/daytrader-t2/prompts/00-common-context.md \
+#        --verify --pre-mortem \
+#        projects/daytrader-t2/prompts/01-maintainability.md \
+#        projects/daytrader-t2/prompts/02-reliability.md \
+#        projects/daytrader-t2/prompts/03-security.md \
+#        projects/daytrader-t2/prompts/04-performance.md
+# ─────────────────────────────────────────────────────────────────────────────
+
+model: opus
+
+# 4 plans x pairwise = 6 comparisons + synthesis — needs headroom
+max_turns: 60
+timeout_ms: 5400000
+
+# DayTrader codebase for fact-checking during merge
+work_dir: ""
+
+project_description: >
+  DayTrader 7 monolith-to-microservices migration planning.
+  4 analytical lenses (Maintainability, Reliability, Security, Performance)
+  grounded in ISO/IEC 25010:2023. The merged plan must address 5 custom
+  constraints: real-time streaming, GDPR compliance, COBOL legacy integration,
+  zero-downtime migration, and Kubernetes target platform.
+
+role: >
+  an expert software architect experienced in large-scale Java EE to
+  microservices migrations, distributed systems, and cloud-native platforms
+
+# Pairwise comparison — more reliable for 4 plans, avoids position bias
+comparison_method: pairwise
+
+# Merge strategy
+strategy: agent-teams
+
+# 5 weighted dimensions from the C4 spec
+dimensions:
+  - name: "Service decomposition quality"
+    weight: 0.25
+  - name: "Data migration strategy"
+    weight: 0.20
+  - name: "Risk mitigation and rollback"
+    weight: 0.20
+  - name: "Deployment and operations"
+    weight: 0.20
+  - name: "Feasibility and sequencing"
+    weight: 0.15
+
+# Evaluation config — binary scoring, single pass
+eval_scoring: binary
+eval_passes: 3
+eval_consensus: majority
+
+advocate_instructions: |
+  Argue for your analytical perspective's unique contribution to the
+  migration plan. Be specific — cite actual DayTrader classes, packages,
+  and data flows from the codebase. Concede where another perspective
+  covers a dimension better. The goal is the best migration plan, not
+  winning the debate.
+
+output_goal: |
+  The merged plan must be a complete, actionable migration blueprint.
+  It must include:
+  1. Service decomposition with class-to-service mapping
+  2. Data partitioning strategy with consistency model per boundary
+  3. Migration phases with rollback points at each phase
+  4. Kubernetes deployment specs (pod sizing, HPA, health checks)
+  5. GDPR compliance architecture (data residency, right to erasure)
+  6. COBOL adapter design for settlement system integration
+  7. Real-time streaming architecture for 3-region market data
+  8. Risk register with likelihood, impact, and mitigation for each risk
+  9. Implementation sequencing with dependencies and effort estimates
+
+  An engineering team given this plan should be able to begin
+  implementation without making strategic decisions.
+
+output_title: "DayTrader 7 Migration Plan — C4 Multi-Lens Synthesis"
+
+constitution:
+  - "Every service boundary must be justified by actual code dependencies found in the DayTrader codebase"
+  - "Every trade-off must be explicitly acknowledged with pros and cons"
+  - "No section should be purely aspirational — each needs concrete next steps"
+  - "All 5 constraints (streaming, GDPR, COBOL, zero-downtime, K8s) must be addressed"
+  - "Risks identified by any lens must appear in the merged plan"
+  - "The plan must be self-consistent — no section contradicts another"
+  - "When resolving a disagreement, verify the correction is applied in every section that mentions the topic"

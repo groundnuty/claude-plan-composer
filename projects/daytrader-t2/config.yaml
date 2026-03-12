@@ -1,0 +1,40 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DayTrader T2 — generation config for claude-plan-composer-ts
+#
+# C4 configuration: 4 ISO 25010-grounded lenses via multi-file mode.
+# Run: npx tsx src/cli/index.ts generate --multi \
+#        --config projects/daytrader-t2/config.yaml \
+#        --context projects/daytrader-t2/prompts/00-common-context.md \
+#        projects/daytrader-t2/prompts/01-maintainability.md \
+#        projects/daytrader-t2/prompts/02-reliability.md \
+#        projects/daytrader-t2/prompts/03-security.md \
+#        projects/daytrader-t2/prompts/04-performance.md
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Model for all 4 variants — opus for reliable agent-teams merge
+model: opus
+
+# Agents need room to explore codebase + produce detailed plans
+max_turns: 80
+timeout_ms: 3600000
+
+# DayTrader codebase — agents must explore the actual code
+# Clone https://github.com/WASdev/sample.daytrader7 first
+work_dir: ""
+additional_dirs:
+  - /tmp/sample.daytrader7
+
+# No MCP servers needed
+strict_mcp: true
+
+# Tools for codebase exploration + web research
+tools:
+  - Read
+  - Glob
+  - Bash
+  - Write
+  - WebFetch
+  - WebSearch
+
+# Multi-file mode — variants section is ignored (each prompt file = one lens)
+variants: []
