@@ -57,7 +57,10 @@ function formatCost(cost: number): string {
 }
 
 /** Return top N tools sorted by count as "Name(count) Name(count)". */
-function topTools(breakdown: Readonly<Record<string, number>>, n: number): string {
+function topTools(
+  breakdown: Readonly<Record<string, number>>,
+  n: number,
+): string {
   return Object.entries(breakdown)
     .sort(([, a], [, b]) => b - a)
     .slice(0, n)
@@ -81,17 +84,21 @@ function activityLabel(
 /** Color-code status string. */
 function statusColor(status: SessionState["status"], nc: boolean): string {
   switch (status) {
-    case "running": return c(GREEN, status, nc);
-    case "done": return c(DIM, status, nc);
-    case "failed": return c(RED, status, nc);
-    case "pending": return c(DIM, status, nc);
+    case "running":
+      return c(GREEN, status, nc);
+    case "done":
+      return c(DIM, status, nc);
+    case "failed":
+      return c(RED, status, nc);
+    case "pending":
+      return c(DIM, status, nc);
   }
 }
 
 /** Extract project name from "projects/NAME/config.yaml" pattern. */
 function projectName(configPath: string): string {
   const match = /projects\/([^/]+)\//.exec(configPath);
-  return match ? match[1] : configPath;
+  return match ? (match[1] ?? configPath) : configPath;
 }
 
 /** Strip ANSI escape codes from a string to measure its display length. */
@@ -158,7 +165,10 @@ function renderSessionRow(
     rightAlign(formatTokens(s.cacheCreationTokens), COL.cacheCreate),
     rightAlign(formatTokens(s.cacheReadTokens), COL.cacheRead),
     rightAlign(formatTokens(s.totalTokens), COL.total),
-    rightAlign(`${formatTokens(s.contextTokens)}(${s.contextPercent}%)`, COL.ctx),
+    rightAlign(
+      `${formatTokens(s.contextTokens)}(${s.contextPercent}%)`,
+      COL.ctx,
+    ),
     rightAlign(String(s.compactions), COL.compactions),
     rightAlign(activityLabel(s, prev, nc), COL.activity),
     ` ${c(DIM, s.lastAction.slice(0, 40), nc)}`,
@@ -190,7 +200,9 @@ function renderChildRows(children: readonly ChildState[], nc: boolean): string {
       const prefix = isLast ? "\u2514\u2500 " : "\u251C\u2500 ";
       const name = leftAlign(c(YELLOW, prefix + child.name, nc), COL.variant);
       const status = leftAlign(
-        child.status === "running" ? c(GREEN, child.status, nc) : c(DIM, child.status, nc),
+        child.status === "running"
+          ? c(GREEN, child.status, nc)
+          : c(DIM, child.status, nc),
         COL.status,
       );
       const cols = [
@@ -217,14 +229,17 @@ function renderChildRows(children: readonly ChildState[], nc: boolean): string {
 type Stage = "generate" | "evaluate" | "merge" | "verify" | "other";
 
 /** Group sessions by pipeline stage based on name prefix. */
-function groupByStage(sessions: readonly SessionState[]): Map<Stage, SessionState[]> {
+function groupByStage(
+  sessions: readonly SessionState[],
+): Map<Stage, SessionState[]> {
   const groups = new Map<Stage, SessionState[]>();
   for (const s of sessions) {
     let stage: Stage;
     if (s.name.startsWith("plan-")) stage = "generate";
     else if (s.name.startsWith("evaluate")) stage = "evaluate";
     else if (s.name.startsWith("merge")) stage = "merge";
-    else if (s.name.startsWith("verify") || s.name.startsWith("pre-mortem")) stage = "verify";
+    else if (s.name.startsWith("verify") || s.name.startsWith("pre-mortem"))
+      stage = "verify";
     else stage = "other";
 
     const existing = groups.get(stage);
@@ -297,7 +312,10 @@ export interface RenderOptions {
  * Render a full monitoring table for the given pipeline state.
  * Returns a multi-line string ready to print to the terminal.
  */
-export function renderTable(state: PipelineState, options: RenderOptions): string {
+export function renderTable(
+  state: PipelineState,
+  options: RenderOptions,
+): string {
   const nc = options.noColor ?? false;
   const lookup = prevLookup(options.previousState);
 
@@ -310,7 +328,7 @@ export function renderTable(state: PipelineState, options: RenderOptions): strin
   );
   lines.push(
     c(BOLD, `cpc monitor — ${project}`, nc) +
-    `  pid:${state.pid}  cmd:${state.command}  elapsed:${elapsed}`,
+      `  pid:${state.pid}  cmd:${state.command}  elapsed:${elapsed}`,
   );
   lines.push("─".repeat(120));
 
@@ -325,7 +343,10 @@ export function renderTable(state: PipelineState, options: RenderOptions): strin
     if (!firstGroup) lines.push("");
     firstGroup = false;
 
-    lines.push(c(DIM, `── ${stage} `, nc) + c(DIM, "─".repeat(Math.max(0, 60 - stage.length - 4)), nc));
+    lines.push(
+      c(DIM, `── ${stage} `, nc) +
+        c(DIM, "─".repeat(Math.max(0, 60 - stage.length - 4)), nc),
+    );
 
     for (const session of sessions) {
       const prev = lookup.get(session.name);
