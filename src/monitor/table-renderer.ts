@@ -75,7 +75,7 @@ function activityLabel(
   nc: boolean,
 ): string {
   if (session.status === "done" || session.status === "pending") return "—";
-  if (prev === undefined) return c(GREEN, "new", nc);
+  if (prev === undefined) return c(CYAN, "new", nc);
   const delta = session.turns - prev.turns;
   if (delta > 0) return c(GREEN, `+${delta}`, nc);
   return c(DIM, "idle", nc);

@@ -180,35 +180,38 @@ program
       const onStatusMessage = collector.createCallback();
       collector.setStage("generating");
 
-      // Build generate options
-      const generateOpts: GenerateOptions = opts.multi
-        ? {
-            promptFiles: await Promise.all(
-              [promptFile, ...extraFiles].map(readPromptFile),
-            ),
-            context: opts.context
-              ? await fs.readFile(opts.context, "utf-8")
-              : undefined,
-            debug: opts.debug ?? false,
-            signal: controller.signal,
-            onStatusMessage,
-          }
-        : {
-            prompt: (await readPromptFile(promptFile)).content,
-            debug: opts.debug ?? false,
-            signal: controller.signal,
-            onStatusMessage,
-          };
+      try {
+        // Build generate options
+        const generateOpts: GenerateOptions = opts.multi
+          ? {
+              promptFiles: await Promise.all(
+                [promptFile, ...extraFiles].map(readPromptFile),
+              ),
+              context: opts.context
+                ? await fs.readFile(opts.context, "utf-8")
+                : undefined,
+              debug: opts.debug ?? false,
+              signal: controller.signal,
+              onStatusMessage,
+            }
+          : {
+              prompt: (await readPromptFile(promptFile)).content,
+              debug: opts.debug ?? false,
+              signal: controller.signal,
+              onStatusMessage,
+            };
 
-      const result = await generate(config, generateOpts);
-      await writePlanSet(result, result.runDir);
-      collector.setOutputDir(result.runDir);
+        const result = await generate(config, generateOpts);
+        await writePlanSet(result, result.runDir);
+        collector.setOutputDir(result.runDir);
 
-      const variantNames = result.plans.map((p) => p.variant.name);
-      printGenerateSummary(result.runDir, result.plans.length, variantNames);
+        const variantNames = result.plans.map((p) => p.variant.name);
+        printGenerateSummary(result.runDir, result.plans.length, variantNames);
 
-      collector.setStage("done");
-      await statusServer.stop();
+        collector.setStage("done");
+      } finally {
+        await statusServer.stop();
+      }
     } catch (err) {
       if (err instanceof CpcError) {
         console.error(`Error [${err.code}]: ${err.message}`);
@@ -275,14 +278,17 @@ program
       const onStatusMessage = collector.createCallback();
       collector.setStage("merging");
 
-      const plans = await readPlanSet(plansDir);
-      const result = await merge(plans, config, { onStatusMessage });
-      await writeMergeResult(result, plansDir);
+      try {
+        const plans = await readPlanSet(plansDir);
+        const result = await merge(plans, config, { onStatusMessage });
+        await writeMergeResult(result, plansDir);
 
-      printMergeSummary(plansDir, result.strategy);
+        printMergeSummary(plansDir, result.strategy);
 
-      collector.setStage("done");
-      await statusServer.stop();
+        collector.setStage("done");
+      } finally {
+        await statusServer.stop();
+      }
     } catch (err) {
       if (err instanceof CpcError) {
         console.error(`Error [${err.code}]: ${err.message}`);
@@ -336,23 +342,26 @@ program
       const onStatusMessage = collector.createCallback();
       collector.setStage("evaluating");
 
-      const evalOpts: EvaluateOptions = {
-        model: opts.model,
-        signal: controller.signal,
-        onStatusMessage,
-      };
+      try {
+        const evalOpts: EvaluateOptions = {
+          model: opts.model,
+          signal: controller.signal,
+          onStatusMessage,
+        };
 
-      const evalResult = await evaluate(planSet, config, evalOpts);
-      await writeEvalResult(evalResult, planSet.runDir);
+        const evalResult = await evaluate(planSet, config, evalOpts);
+        await writeEvalResult(evalResult, planSet.runDir);
 
-      printEvalSummary(
-        evalResult.convergence,
-        evalResult.gaps,
-        evalResult.summary,
-      );
+        printEvalSummary(
+          evalResult.convergence,
+          evalResult.gaps,
+          evalResult.summary,
+        );
 
-      collector.setStage("done");
-      await statusServer.stop();
+        collector.setStage("done");
+      } finally {
+        await statusServer.stop();
+      }
     } catch (err) {
       if (err instanceof CpcError) {
         console.error(`Error [${err.code}]: ${err.message}`);
@@ -410,61 +419,68 @@ program
       const onStatusMessage = collector.createCallback();
       collector.setStage("verifying");
 
-      const minimalMergeResult = {
-        content: mergedContent,
-        comparison: [] as const,
-        strategy: "simple" as const,
-        metadata: {
-          model: opts.model ?? "unknown",
-          turns: 0,
-          durationMs: 0,
-          durationApiMs: 0,
-          tokenUsage: {
-            inputTokens: 0,
-            outputTokens: 0,
-            cacheReadInputTokens: 0,
-            cacheCreationInputTokens: 0,
+      try {
+        const minimalMergeResult = {
+          content: mergedContent,
+          comparison: [] as const,
+          strategy: "simple" as const,
+          metadata: {
+            model: opts.model ?? "unknown",
+            turns: 0,
+            durationMs: 0,
+            durationApiMs: 0,
+            tokenUsage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadInputTokens: 0,
+              cacheCreationInputTokens: 0,
+              costUsd: 0,
+            },
             costUsd: 0,
+            stopReason: null,
+            sessionId: "",
+            sourcePlans: planSet.plans.length,
+            totalCostUsd: 0,
           },
-          costUsd: 0,
-          stopReason: null,
-          sessionId: "",
-          sourcePlans: planSet.plans.length,
-          totalCostUsd: 0,
-        },
-      };
+        };
 
-      const verifyOpts: VerifyOptions = {
-        model: opts.model,
-        signal: controller.signal,
-        onStatusMessage,
-      };
-
-      const verifyResult = await verify(
-        minimalMergeResult,
-        planSet,
-        verifyOpts,
-      );
-      await writeVerifyResult(verifyResult, resolvedDir);
-
-      printVerifySummary(verifyResult.gates, verifyResult.pass);
-
-      if (opts.preMortem) {
-        collector.setStage("pre-mortem");
-        const pmOpts: PreMortemOptions = {
+        const verifyOpts: VerifyOptions = {
           model: opts.model,
           signal: controller.signal,
           onStatusMessage,
         };
-        const pmResult = await runPreMortem(mergedContent, resolvedDir, pmOpts);
-        await writePreMortemResult(pmResult, resolvedDir);
-        console.error(
-          `Pre-mortem: ${pmResult.scenarios.length} failure scenarios → ${resolvedDir}/pre-mortem.md`,
-        );
-      }
 
-      collector.setStage("done");
-      await statusServer.stop();
+        const verifyResult = await verify(
+          minimalMergeResult,
+          planSet,
+          verifyOpts,
+        );
+        await writeVerifyResult(verifyResult, resolvedDir);
+
+        printVerifySummary(verifyResult.gates, verifyResult.pass);
+
+        if (opts.preMortem) {
+          collector.setStage("pre-mortem");
+          const pmOpts: PreMortemOptions = {
+            model: opts.model,
+            signal: controller.signal,
+            onStatusMessage,
+          };
+          const pmResult = await runPreMortem(
+            mergedContent,
+            resolvedDir,
+            pmOpts,
+          );
+          await writePreMortemResult(pmResult, resolvedDir);
+          console.error(
+            `Pre-mortem: ${pmResult.scenarios.length} failure scenarios → ${resolvedDir}/pre-mortem.md`,
+          );
+        }
+
+        collector.setStage("done");
+      } finally {
+        await statusServer.stop();
+      }
     } catch (err) {
       if (err instanceof CpcError) {
         console.error(`Error [${err.code}]: ${err.message}`);
@@ -567,107 +583,114 @@ program
 
       const onStatusMessage = collector.createCallback();
 
-      // 1. Generate
-      collector.setStage("generating");
-      const generateOpts: GenerateOptions = opts.multi
-        ? {
-            promptFiles: await Promise.all(
-              [promptFile, ...extraFiles].map(readPromptFile),
-            ),
-            context: opts.context
-              ? await fs.readFile(opts.context, "utf-8")
-              : undefined,
-            debug: opts.debug ?? false,
+      try {
+        // 1. Generate
+        collector.setStage("generating");
+        const generateOpts: GenerateOptions = opts.multi
+          ? {
+              promptFiles: await Promise.all(
+                [promptFile, ...extraFiles].map(readPromptFile),
+              ),
+              context: opts.context
+                ? await fs.readFile(opts.context, "utf-8")
+                : undefined,
+              debug: opts.debug ?? false,
+              signal: controller.signal,
+              onStatusMessage,
+            }
+          : {
+              prompt: (await readPromptFile(promptFile)).content,
+              debug: opts.debug ?? false,
+              signal: controller.signal,
+              onStatusMessage,
+            };
+
+        const planSet = await generate(genConfig, generateOpts);
+        await writePlanSet(planSet, planSet.runDir);
+        collector.setOutputDir(planSet.runDir);
+
+        const variantNames = planSet.plans.map((p) => p.variant.name);
+        printGenerateSummary(
+          planSet.runDir,
+          planSet.plans.length,
+          variantNames,
+        );
+
+        // 2. Evaluate (optional — skipped when --skip-eval is set)
+        let evalResult = undefined;
+        if (!opts.skipEval) {
+          collector.setStage("evaluating");
+          evalResult = await evaluate(planSet, mergeConfig, {
             signal: controller.signal,
             onStatusMessage,
-          }
-        : {
-            prompt: (await readPromptFile(promptFile)).content,
-            debug: opts.debug ?? false,
-            signal: controller.signal,
-            onStatusMessage,
-          };
+          });
+          await writeEvalResult(evalResult, planSet.runDir);
+          printEvalSummary(
+            evalResult.convergence,
+            evalResult.gaps,
+            evalResult.summary,
+          );
+        }
 
-      const planSet = await generate(genConfig, generateOpts);
-      await writePlanSet(planSet, planSet.runDir);
-      collector.setOutputDir(planSet.runDir);
-
-      const variantNames = planSet.plans.map((p) => p.variant.name);
-      printGenerateSummary(planSet.runDir, planSet.plans.length, variantNames);
-
-      // 2. Evaluate (optional — skipped when --skip-eval is set)
-      let evalResult = undefined;
-      if (!opts.skipEval) {
-        collector.setStage("evaluating");
-        evalResult = await evaluate(planSet, mergeConfig, {
-          signal: controller.signal,
+        // 3. Merge
+        collector.setStage("merging");
+        const mergeResult = await merge(planSet, mergeConfig, {
+          evalResult,
           onStatusMessage,
         });
-        await writeEvalResult(evalResult, planSet.runDir);
-        printEvalSummary(
-          evalResult.convergence,
-          evalResult.gaps,
-          evalResult.summary,
-        );
-      }
+        await writeMergeResult(mergeResult, planSet.runDir);
 
-      // 3. Merge
-      collector.setStage("merging");
-      const mergeResult = await merge(planSet, mergeConfig, {
-        evalResult,
-        onStatusMessage,
-      });
-      await writeMergeResult(mergeResult, planSet.runDir);
+        printMergeSummary(planSet.runDir, mergeResult.strategy);
 
-      printMergeSummary(planSet.runDir, mergeResult.strategy);
-
-      // 4. Verify (optional — enabled when --verify is set)
-      let verifyResult = undefined;
-      if (opts.verify) {
-        collector.setStage("verifying");
-        const verifyOpts: VerifyOptions = {
-          model: opts.verifyModel,
-          signal: controller.signal,
-          onStatusMessage,
-        };
-        verifyResult = await verify(mergeResult, planSet, verifyOpts);
-        await writeVerifyResult(verifyResult, planSet.runDir);
-        printVerifySummary(verifyResult.gates, verifyResult.pass);
-
-        if (opts.preMortem) {
-          collector.setStage("pre-mortem");
-          const pmOpts: PreMortemOptions = {
+        // 4. Verify (optional — enabled when --verify is set)
+        let verifyResult = undefined;
+        if (opts.verify) {
+          collector.setStage("verifying");
+          const verifyOpts: VerifyOptions = {
             model: opts.verifyModel,
             signal: controller.signal,
             onStatusMessage,
           };
-          const pmResult = await runPreMortem(
-            mergeResult.content,
-            planSet.runDir,
-            pmOpts,
-          );
-          await writePreMortemResult(pmResult, planSet.runDir);
-          console.error(
-            `Pre-mortem: ${pmResult.scenarios.length} failure scenarios → ${planSet.runDir}/pre-mortem.md`,
-          );
+          verifyResult = await verify(mergeResult, planSet, verifyOpts);
+          await writeVerifyResult(verifyResult, planSet.runDir);
+          printVerifySummary(verifyResult.gates, verifyResult.pass);
+
+          if (opts.preMortem) {
+            collector.setStage("pre-mortem");
+            const pmOpts: PreMortemOptions = {
+              model: opts.verifyModel,
+              signal: controller.signal,
+              onStatusMessage,
+            };
+            const pmResult = await runPreMortem(
+              mergeResult.content,
+              planSet.runDir,
+              pmOpts,
+            );
+            await writePreMortemResult(pmResult, planSet.runDir);
+            console.error(
+              `Pre-mortem: ${pmResult.scenarios.length} failure scenarios → ${planSet.runDir}/pre-mortem.md`,
+            );
+          }
         }
+
+        collector.setStage("done");
+
+        const pipelineResult: PipelineResult = {
+          planSet,
+          mergeResult,
+          evalResult,
+          verifyResult,
+        };
+
+        // Print final pipeline summary to stderr
+        console.error("---");
+        console.error(`Pipeline complete: ${planSet.runDir}`);
+        console.error(`Plans: ${pipelineResult.planSet.plans.length}`);
+        console.error(`Merge strategy: ${pipelineResult.mergeResult.strategy}`);
+      } finally {
+        await statusServer.stop();
       }
-
-      collector.setStage("done");
-      await statusServer.stop();
-
-      const pipelineResult: PipelineResult = {
-        planSet,
-        mergeResult,
-        evalResult,
-        verifyResult,
-      };
-
-      // Print final pipeline summary to stderr
-      console.error("---");
-      console.error(`Pipeline complete: ${planSet.runDir}`);
-      console.error(`Plans: ${pipelineResult.planSet.plans.length}`);
-      console.error(`Merge strategy: ${pipelineResult.mergeResult.strategy}`);
     } catch (err) {
       if (err instanceof CpcError) {
         console.error(`Error [${err.code}]: ${err.message}`);

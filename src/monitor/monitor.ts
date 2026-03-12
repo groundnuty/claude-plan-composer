@@ -19,13 +19,18 @@ function clearScreen(): void {
 }
 
 async function selectPipeline(
-  pipelines: readonly { socket: { pid: number; socketPath: string }; state: PipelineState }[],
+  pipelines: readonly {
+    socket: { pid: number; socketPath: string };
+    state: PipelineState;
+  }[],
 ): Promise<string> {
   const isTTY = process.stdin.isTTY ?? false;
 
   if (!isTTY) {
     const sorted = [...pipelines].sort(
-      (a, b) => new Date(b.state.startedAt).getTime() - new Date(a.state.startedAt).getTime(),
+      (a, b) =>
+        new Date(b.state.startedAt).getTime() -
+        new Date(a.state.startedAt).getTime(),
     );
     const chosen = sorted[0]!;
     console.error(`Auto-selected PID ${chosen.socket.pid} (most recent)`);
@@ -41,12 +46,20 @@ async function selectPipeline(
       minute: "2-digit",
       hour12: false,
     });
-    console.log(`  ${i + 1}) ${name}  (PID ${p.socket.pid}, started ${time}, ${p.state.stage})`);
+    console.log(
+      `  ${i + 1}) ${name}  (PID ${p.socket.pid}, started ${time}, ${p.state.stage})`,
+    );
   }
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
   const answer = await new Promise<string>((resolve) => {
-    rl.question(`\nWhich process to monitor? [1-${pipelines.length}]: `, resolve);
+    rl.question(
+      `\nWhich process to monitor? [1-${pipelines.length}]: `,
+      resolve,
+    );
   });
   rl.close();
 
@@ -61,7 +74,9 @@ async function selectPipeline(
 async function buildPostHocState(dir: string): Promise<PipelineState> {
   const entries = await fs.readdir(dir);
   const sessions: SessionState[] = [];
-  const logFiles = entries.filter((f) => f.endsWith(".log") || f.endsWith(".ndjson"));
+  const logFiles = entries.filter(
+    (f) => f.endsWith(".log") || f.endsWith(".ndjson"),
+  );
 
   for (const logFile of logFiles) {
     const logPath = path.join(dir, logFile);
@@ -89,9 +104,16 @@ async function buildPostHocState(dir: string): Promise<PipelineState> {
       outputTokens: summary.outputTokens,
       cacheCreationTokens: summary.cacheCreationTokens,
       cacheReadTokens: summary.cacheReadTokens,
-      totalTokens: summary.inputTokens + summary.outputTokens + summary.cacheCreationTokens + summary.cacheReadTokens,
+      totalTokens:
+        summary.inputTokens +
+        summary.outputTokens +
+        summary.cacheCreationTokens +
+        summary.cacheReadTokens,
       contextTokens: summary.contextTokens,
-      contextPercent: summary.contextTokens > 0 ? Math.round((summary.contextTokens / 200_000) * 100) : 0,
+      contextPercent:
+        summary.contextTokens > 0
+          ? Math.round((summary.contextTokens / 200_000) * 100)
+          : 0,
       compactions: summary.compactions,
       cost: summary.cost,
       durationMs: 0,
@@ -118,12 +140,36 @@ export async function runMonitor(options: MonitorOptions): Promise<void> {
 
   // Post-hoc mode
   if (options.dir) {
-    const state = await buildPostHocState(options.dir);
-    if (options.json) {
-      console.log(JSON.stringify(state, null, 2));
-    } else {
-      console.log(renderTable(state, { noColor: !process.stdout.isTTY }));
-    }
+    const renderPostHoc = async () => {
+      const state = await buildPostHocState(options.dir!);
+      if (options.json) {
+        console.log(JSON.stringify(state, null, 2));
+      } else {
+        if (!options.once) clearScreen();
+        console.log(renderTable(state, { noColor: !process.stdout.isTTY }));
+      }
+    };
+
+    await renderPostHoc();
+    if (options.once || !options.interval) return;
+
+    // Refresh loop for post-hoc with --interval
+    await new Promise<void>((resolve) => {
+      let stopped = false;
+      const scheduleNext = () => {
+        if (stopped) return;
+        setTimeout(async () => {
+          if (stopped) return;
+          await renderPostHoc();
+          scheduleNext();
+        }, intervalMs);
+      };
+      process.on("SIGINT", () => {
+        stopped = true;
+        resolve();
+      });
+      scheduleNext();
+    });
     return;
   }
 
@@ -132,7 +178,9 @@ export async function runMonitor(options: MonitorOptions): Promise<void> {
   const pipelines = await discoverLivePipelines(tmpDir);
 
   if (pipelines.length === 0) {
-    console.error("No running cpc processes found. Specify a run directory: cpc monitor <dir>");
+    console.error(
+      "No running cpc processes found. Specify a run directory: cpc monitor <dir>",
+    );
     process.exitCode = 1;
     return;
   }
@@ -155,7 +203,9 @@ export async function runMonitor(options: MonitorOptions): Promise<void> {
         console.log(JSON.stringify(state));
       } else {
         clearScreen();
-        console.log(renderTable(state, { previousState, noColor: !process.stdout.isTTY }));
+        console.log(
+          renderTable(state, { previousState, noColor: !process.stdout.isTTY }),
+        );
       }
 
       previousState = state;

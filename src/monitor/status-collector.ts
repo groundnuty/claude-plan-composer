@@ -130,8 +130,10 @@ export class StatusCollector {
   }
 
   onMessage(sessionName: string, msg: unknown): void {
-    const s = this.sessions.get(sessionName);
-    if (!s) return;
+    if (!this.sessions.has(sessionName)) {
+      this.registerSession(sessionName);
+    }
+    const s = this.sessions.get(sessionName)!;
 
     const m = msg as Record<string, unknown>;
 
@@ -154,6 +156,9 @@ export class StatusCollector {
       case "task_notification":
         this.handleTaskNotification(s, m);
         break;
+      case "tool_progress":
+        this.handleToolProgress(s, m);
+        break;
       default:
         break;
     }
@@ -171,7 +176,10 @@ export class StatusCollector {
 
     for (const s of this.sessions.values()) {
       const totalTokens =
-        s.inputTokens + s.outputTokens + s.cacheCreationTokens + s.cacheReadTokens;
+        s.inputTokens +
+        s.outputTokens +
+        s.cacheCreationTokens +
+        s.cacheReadTokens;
       const ctxLimit = contextLimit("default");
       const contextPercent =
         ctxLimit > 0 ? Math.round((s.contextTokens / ctxLimit) * 100) : 0;
@@ -189,7 +197,10 @@ export class StatusCollector {
         cacheCreationTokens: c.cacheCreationTokens,
         cacheReadTokens: c.cacheReadTokens,
         totalTokens:
-          c.inputTokens + c.outputTokens + c.cacheCreationTokens + c.cacheReadTokens,
+          c.inputTokens +
+          c.outputTokens +
+          c.cacheCreationTokens +
+          c.cacheReadTokens,
         lastAction: c.lastAction,
       }));
 
@@ -265,6 +276,10 @@ export class StatusCollector {
       if (name === "SendMessage") {
         this.handleSendMessage(s, tool.input as Record<string, unknown>);
       }
+
+      if (name === "TeamDelete") {
+        this.handleTeamDelete(s);
+      }
     }
   }
 
@@ -285,7 +300,10 @@ export class StatusCollector {
     }
   }
 
-  private handleTaskStarted(s: MutableSession, m: Record<string, unknown>): void {
+  private handleTaskStarted(
+    s: MutableSession,
+    m: Record<string, unknown>,
+  ): void {
     const taskId = m.task_id as string;
     const description = m.description as string;
     s.agentsTotal++;
@@ -306,7 +324,10 @@ export class StatusCollector {
     });
   }
 
-  private handleTaskProgress(s: MutableSession, m: Record<string, unknown>): void {
+  private handleTaskProgress(
+    s: MutableSession,
+    m: Record<string, unknown>,
+  ): void {
     const taskId = m.task_id as string;
     const child = s.children.find((c) => c.taskId === taskId);
     if (!child) return;
@@ -318,7 +339,10 @@ export class StatusCollector {
     }
   }
 
-  private handleTaskNotification(s: MutableSession, m: Record<string, unknown>): void {
+  private handleTaskNotification(
+    s: MutableSession,
+    m: Record<string, unknown>,
+  ): void {
     const taskId = m.task_id as string;
     const status = m.status as string;
     const child = s.children.find((c) => c.taskId === taskId);
@@ -334,7 +358,10 @@ export class StatusCollector {
     }
   }
 
-  private handleTeamCreate(s: MutableSession, input: Record<string, unknown>): void {
+  private handleTeamCreate(
+    s: MutableSession,
+    input: Record<string, unknown>,
+  ): void {
     const members = input.members as Array<Record<string, unknown>> | undefined;
     if (!Array.isArray(members)) return;
 
@@ -359,7 +386,10 @@ export class StatusCollector {
     }
   }
 
-  private handleSendMessage(s: MutableSession, input: Record<string, unknown>): void {
+  private handleSendMessage(
+    s: MutableSession,
+    input: Record<string, unknown>,
+  ): void {
     const to = input.to as string | undefined;
     if (!to) return;
 
@@ -367,6 +397,25 @@ export class StatusCollector {
     if (child) {
       child.turns++;
       child.lastAction = `SendMessage from lead`;
+    }
+  }
+
+  private handleTeamDelete(s: MutableSession): void {
+    for (const child of s.children) {
+      if (child.type === "team-member" && child.status === "running") {
+        child.status = "done";
+        s.agentsRunning = Math.max(0, s.agentsRunning - 1);
+      }
+    }
+  }
+
+  private handleToolProgress(
+    s: MutableSession,
+    m: Record<string, unknown>,
+  ): void {
+    const toolName = m.tool_name as string | undefined;
+    if (toolName) {
+      s.lastAction = toolName;
     }
   }
 }
