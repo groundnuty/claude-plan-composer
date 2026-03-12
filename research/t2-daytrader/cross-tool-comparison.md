@@ -61,15 +61,15 @@ Opus is faster but 6× more expensive. Plan sizes differ — Sonnet produces lar
 
 | Dimension | Sonnet | Opus (bash) | Opus (TS) |
 |-----------|--------|------------|-----------|
-| Service decomposition | 4/4 | 4/4 | — |
-| Data migration | 1/4 | 3/4 | — |
-| Risk mitigation | 2/4 | 1/4 | — |
-| Deployment & ops | 4/4 | 4/4 | — |
-| Feasibility | 4/4 | 4/4 | — |
-| Strongest lens | Reliability (5/5) | Reliability (5/5) | — |
-| Weakest lens | Security (3/5) | Security (3/5) | — |
+| Service decomposition | 4/4 | 4/4 | 4/4 |
+| Data migration | 1/4 | 3/4 | 4/4 |
+| Risk mitigation | 2/4 | 1/4 | 4/4 |
+| Deployment & ops | 4/4 | 4/4 | 4/4 |
+| Feasibility | 4/4 | 4/4 | 4/4 |
+| Strongest lens | Reliability (5/5) | Reliability (5/5) | All tied (5/5) |
+| Weakest lens | Security (3/5) | Security (3/5) | All tied (5/5) |
 
-TS evaluation uses a different prompt template (convergence score + gap analysis) so direct coverage comparison is not available. However, the same structural patterns emerge: reliability is strongest, security is weakest.
+**Notable:** TS Opus evaluation scores 20/20 (every plan passes every dimension) vs bash Sonnet 15/20 and bash Opus 17/20. This could reflect either (a) Opus-generated plans being genuinely more complete per dimension, or (b) the TS evaluator prompt being more lenient. The TS evaluator uses a different prompt template that produces convergence score + gap analysis alongside the per-plan matrix. Despite 20/20 per-plan scores, the TS evaluation still identifies 6 cross-plan gaps (data consistency verification, GitOps pipeline, GDPR DSAR orchestration, user cohort migration, timeline contingency, integration testing strategy) — suggesting the gap analysis captures what the per-plan binary scoring misses.
 
 ---
 
@@ -83,7 +83,7 @@ TS evaluation uses a different prompt template (convergence score + gap analysis
 | B2 | subagents | 30 | 4 | ~$0.80 | ~10 min | 58KB |
 | B3 | real teams | 70 | 19 | ~$2.00 | ~7.5 min | 57KB |
 | **T1** | **simple** | **5** | **2** | **$1.13** | **~8 min** | **71KB** |
-| **T2** | **real teams** | **35** | **23** | **$1.61** | **~10 min** | **—** |
+| **T2** | **real teams** | **35** | **23** | **$1.61** | **~10 min** | **76KB** |
 
 ### 4.2 Tool Usage Fingerprints
 

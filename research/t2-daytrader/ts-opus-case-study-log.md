@@ -37,11 +37,11 @@ All artifacts in `generated-plans/multi-120621/20260312-120621/`:
 | `evaluation-sonnet.json` | 7.1KB | Coverage matrix (3-pass majority) |
 | `evaluation-sonnet.md` | 2.3KB | Evaluation summary |
 | `merged-plan-simple.md` | 71KB | Merged plan (simple strategy) |
-| `merged-plan.md` | — | Merged plan (agent-teams strategy) |
+| `merged-plan.md` | 76KB | Merged plan (agent-teams strategy) |
 | `verification-report-simple.json` | 6.8KB | Verify: 4/4 PASS |
-| `verification-report.json` | — | Verify: 3/4 PASS (FACTUAL_ACCURACY FAIL) |
+| `verification-report.json` | 7.2KB | Verify: 3/4 PASS (FACTUAL_ACCURACY FAIL) |
 | `pre-mortem-simple.md` | 9.1KB | Pre-mortem (simple): 5 scenarios |
-| `pre-mortem.md` | — | Pre-mortem (agent-teams): 5 scenarios |
+| `pre-mortem.md` | 8.2KB | Pre-mortem (agent-teams): 5 scenarios |
 
 ---
 
@@ -113,7 +113,7 @@ All 6 pairs: **0%** overlap (rounded to nearest integer). Mean Jaccard: 0.7%.
 | Turns | 35 |
 | Tools | 23 — TeamCreate(1), SendMessage(10), Read(4), Glob(3), Write(1), TeamDelete(1) |
 | Cost | $1.61 |
-| Output | — |
+| Output | 76KB |
 
 **Critical finding: TeamCreate works headlessly.** The Agent SDK `query()` with `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` env var and `TeamCreate`/`SendMessage`/`TeamDelete` in the tools list enables real multi-agent team debate without interactive mode.
 
@@ -177,7 +177,7 @@ All 6 pairs: **0%** overlap (rounded to nearest integer). Mean Jaccard: 0.7%.
 | Tools | 2 | 23 |
 | Cost | $1.13 | $1.61 |
 | Duration | ~8 min | ~10 min |
-| Output size | 71KB | — |
+| Output size | 71KB | 76KB |
 | **CONSISTENCY** | PASS | PASS |
 | **COMPLETENESS** | PASS | PASS |
 | **ACTIONABILITY** | PASS | PASS |
@@ -202,8 +202,8 @@ All 6 pairs: **0%** overlap (rounded to nearest integer). Mean Jaccard: 0.7%.
 | Evaluate (3-pass) | ~65s | sonnet | 2 | 0 | $0.09 | 9KB |
 | Merge (simple) | ~498s | opus | 5 | 2 | $1.13 | 71KB |
 | Verify+PM (simple) | ~250s | sonnet | 7 | 2 | $0.60 | 16KB |
-| Merge (agent-teams) | ~603s | opus | 35 | 23 | $1.61 | — |
-| Verify+PM (agent-teams) | ~293s | sonnet | 15 | 8 | $0.89 | — |
+| Merge (agent-teams) | ~603s | opus | 35 | 23 | $1.61 | 76KB |
+| Verify+PM (agent-teams) | ~293s | sonnet | 15 | 8 | $0.89 | 31KB |
 | **Total** | **~35 min** | | | | **$9.26** | |
 
 ---
