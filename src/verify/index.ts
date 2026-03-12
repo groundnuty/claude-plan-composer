@@ -61,7 +61,11 @@ export async function verify(
         settingSources: [],
         persistSession: false,
         abortController,
-        env: { CLAUDE_CODE_MAX_OUTPUT_TOKENS: "16000", CLAUDECODE: "" },
+        env: {
+          ...process.env,
+          CLAUDE_CODE_MAX_OUTPUT_TOKENS: "16000",
+          CLAUDECODE: "",
+        },
       },
     })) {
       progress.onMessage(msg);
