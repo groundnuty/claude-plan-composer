@@ -5,7 +5,9 @@ import type { MergeConfig } from "../types/config.js";
 /** Format dimension list for evaluation prompts */
 function formatDimensions(config: MergeConfig): string {
   return config.dimensions
-    .map(d => (typeof d === "string" ? `- ${d}` : `- ${d.name} (weight: ${d.weight})`))
+    .map((d) =>
+      typeof d === "string" ? `- ${d}` : `- ${d.name} (weight: ${d.weight})`,
+    )
     .join("\n");
 }
 
@@ -14,8 +16,8 @@ function buildScoringInstructions(config: MergeConfig): string {
   if (config.evalScoring === "binary") {
     return [
       "For each plan × dimension, assign a binary score:",
-      '  "pass": true  — the plan adequately addresses this dimension',
-      '  "pass": false — the plan fails or inadequately addresses this dimension',
+      '  "pass": true  — the plan substantively addresses this dimension with enough depth to be actionable',
+      '  "pass": false — the plan fails to substantively address this dimension or lacks actionable depth',
       'Include a "critique" string explaining your judgment in 1-2 sentences.',
     ].join("\n");
   }
@@ -69,7 +71,7 @@ export function buildEvalPrompt(
   plans: readonly Plan[],
   config: MergeConfig,
 ): string {
-  const embeddedPlans = plans.map(p => embedPlan(p)).join("\n\n");
+  const embeddedPlans = plans.map((p) => embedPlan(p)).join("\n\n");
   const dimensionList = formatDimensions(config);
   const scoringInstructions = buildScoringInstructions(config);
   const jsonSchema = buildJsonSchema(config);

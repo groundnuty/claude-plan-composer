@@ -69,7 +69,7 @@ Opus is faster but 6× more expensive. Plan sizes differ — Sonnet produces lar
 | Strongest lens | Reliability (5/5) | Reliability (5/5) | All tied (5/5) |
 | Weakest lens | Security (3/5) | Security (3/5) | All tied (5/5) |
 
-**Notable:** TS Opus evaluation scores 20/20 (every plan passes every dimension) vs bash Sonnet 15/20 and bash Opus 17/20. This could reflect either (a) Opus-generated plans being genuinely more complete per dimension, or (b) the TS evaluator prompt being more lenient. The TS evaluator uses a different prompt template that produces convergence score + gap analysis alongside the per-plan matrix. Despite 20/20 per-plan scores, the TS evaluation still identifies 6 cross-plan gaps (data consistency verification, GitOps pipeline, GDPR DSAR orchestration, user cohort migration, timeline contingency, integration testing strategy) — suggesting the gap analysis captures what the per-plan binary scoring misses.
+**Notable:** TS Opus evaluation scored 20/20 (every plan passes every dimension) vs bash Sonnet 15/20 and bash Opus 17/20. Root cause identified and **fixed**: the TS evaluator used a weaker pass criterion ("adequately addresses") vs bash's stricter criterion ("substantively addresses with enough depth to be actionable"). The TS prompt has been updated to match bash's actionability requirement. Despite the lenient 20/20 per-plan scores, the TS evaluation still identified 6 cross-plan gaps (data consistency verification, GitOps pipeline, GDPR DSAR orchestration, user cohort migration, timeline contingency, integration testing strategy) — the gap analysis captured what the lenient binary scoring missed.
 
 ---
 
