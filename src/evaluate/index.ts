@@ -2,6 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { PlanSet } from "../types/plan.js";
 import type { MergeConfig } from "../types/config.js";
 import type { EvalResult } from "../types/evaluation.js";
+import type { OnStatusMessage } from "../monitor/types.js";
 import { NdjsonLogger } from "../pipeline/logger.js";
 import { SessionProgress } from "../pipeline/progress.js";
 import { buildEvalPrompt } from "./prompt-builder.js";
@@ -14,6 +15,7 @@ export const DEFAULT_EVAL_MODEL = "claude-haiku-4-5-20251001";
 export interface EvaluateOptions {
   readonly model?: string;
   readonly signal?: AbortSignal;
+  readonly onStatusMessage?: OnStatusMessage;
 }
 
 /**
@@ -62,6 +64,7 @@ export async function evaluate(
       },
     })) {
       progress.onMessage(msg);
+      options.onStatusMessage?.("evaluate", msg);
       await logger.write(msg);
 
       // Collect text from assistant messages

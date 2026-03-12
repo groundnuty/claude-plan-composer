@@ -51,7 +51,7 @@ export async function runPipeline(
   }
 
   // Step 4: Merge plans (pass evalResult for eval-informed merging)
-  const mergeResult = await merge(planSet, mergeConfig, evalResult);
+  const mergeResult = await merge(planSet, mergeConfig, { evalResult });
 
   // Step 5: Persist merge result
   await writeMergeResult(mergeResult, planSet.runDir);

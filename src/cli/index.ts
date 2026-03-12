@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import * as fs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 import { Command } from "commander";
 
@@ -27,6 +28,8 @@ import { runPreMortem } from "../verify/pre-mortem.js";
 import type { PreMortemOptions } from "../verify/pre-mortem.js";
 import { CpcError } from "../types/errors.js";
 import type { PipelineResult } from "../types/pipeline.js";
+import { StatusCollector } from "../monitor/status-collector.js";
+import { StatusServer } from "../monitor/status-server.js";
 import { monitorCommand } from "./monitor.js";
 
 // ---------------------------------------------------------------------------
@@ -155,6 +158,28 @@ program
         return;
       }
 
+      // Set up status server for live monitoring
+      const collector = new StatusCollector({
+        pid: process.pid,
+        command: "generate",
+        configPath: opts.config ?? "",
+        outputDir: "",
+      });
+      const statusServer = new StatusServer(collector);
+      const socketPath = `${os.tmpdir()}/cpc-${process.pid}.sock`;
+      await statusServer.start(socketPath);
+
+      controller.signal.addEventListener(
+        "abort",
+        () => {
+          statusServer.stop();
+        },
+        { once: true },
+      );
+
+      const onStatusMessage = collector.createCallback();
+      collector.setStage("generating");
+
       // Build generate options
       const generateOpts: GenerateOptions = opts.multi
         ? {
@@ -166,18 +191,24 @@ program
               : undefined,
             debug: opts.debug ?? false,
             signal: controller.signal,
+            onStatusMessage,
           }
         : {
             prompt: (await readPromptFile(promptFile)).content,
             debug: opts.debug ?? false,
             signal: controller.signal,
+            onStatusMessage,
           };
 
       const result = await generate(config, generateOpts);
       await writePlanSet(result, result.runDir);
+      collector.setOutputDir(result.runDir);
 
       const variantNames = result.plans.map((p) => p.variant.name);
       printGenerateSummary(result.runDir, result.plans.length, variantNames);
+
+      collector.setStage("done");
+      await statusServer.stop();
     } catch (err) {
       if (err instanceof CpcError) {
         console.error(`Error [${err.code}]: ${err.message}`);
@@ -222,11 +253,36 @@ program
         return;
       }
 
+      // Set up status server for live monitoring
+      const collector = new StatusCollector({
+        pid: process.pid,
+        command: "merge",
+        configPath: opts.config ?? "",
+        outputDir: plansDir,
+      });
+      const statusServer = new StatusServer(collector);
+      const socketPath = `${os.tmpdir()}/cpc-${process.pid}.sock`;
+      await statusServer.start(socketPath);
+
+      controller.signal.addEventListener(
+        "abort",
+        () => {
+          statusServer.stop();
+        },
+        { once: true },
+      );
+
+      const onStatusMessage = collector.createCallback();
+      collector.setStage("merging");
+
       const plans = await readPlanSet(plansDir);
-      const result = await merge(plans, config);
+      const result = await merge(plans, config, { onStatusMessage });
       await writeMergeResult(result, plansDir);
 
       printMergeSummary(plansDir, result.strategy);
+
+      collector.setStage("done");
+      await statusServer.stop();
     } catch (err) {
       if (err instanceof CpcError) {
         console.error(`Error [${err.code}]: ${err.message}`);
@@ -258,9 +314,32 @@ program
 
       const planSet = await readPlanSet(resolvedDir);
 
+      // Set up status server for live monitoring
+      const collector = new StatusCollector({
+        pid: process.pid,
+        command: "evaluate",
+        configPath: opts.config ?? "",
+        outputDir: resolvedDir,
+      });
+      const statusServer = new StatusServer(collector);
+      const socketPath = `${os.tmpdir()}/cpc-${process.pid}.sock`;
+      await statusServer.start(socketPath);
+
+      controller.signal.addEventListener(
+        "abort",
+        () => {
+          statusServer.stop();
+        },
+        { once: true },
+      );
+
+      const onStatusMessage = collector.createCallback();
+      collector.setStage("evaluating");
+
       const evalOpts: EvaluateOptions = {
         model: opts.model,
         signal: controller.signal,
+        onStatusMessage,
       };
 
       const evalResult = await evaluate(planSet, config, evalOpts);
@@ -271,6 +350,9 @@ program
         evalResult.gaps,
         evalResult.summary,
       );
+
+      collector.setStage("done");
+      await statusServer.stop();
     } catch (err) {
       if (err instanceof CpcError) {
         console.error(`Error [${err.code}]: ${err.message}`);
@@ -306,6 +388,28 @@ program
         "utf-8",
       );
 
+      // Set up status server for live monitoring
+      const collector = new StatusCollector({
+        pid: process.pid,
+        command: "verify",
+        configPath: opts.config ?? "",
+        outputDir: resolvedDir,
+      });
+      const statusServer = new StatusServer(collector);
+      const socketPath = `${os.tmpdir()}/cpc-${process.pid}.sock`;
+      await statusServer.start(socketPath);
+
+      controller.signal.addEventListener(
+        "abort",
+        () => {
+          statusServer.stop();
+        },
+        { once: true },
+      );
+
+      const onStatusMessage = collector.createCallback();
+      collector.setStage("verifying");
+
       const minimalMergeResult = {
         content: mergedContent,
         comparison: [] as const,
@@ -333,6 +437,7 @@ program
       const verifyOpts: VerifyOptions = {
         model: opts.model,
         signal: controller.signal,
+        onStatusMessage,
       };
 
       const verifyResult = await verify(
@@ -345,9 +450,11 @@ program
       printVerifySummary(verifyResult.gates, verifyResult.pass);
 
       if (opts.preMortem) {
+        collector.setStage("pre-mortem");
         const pmOpts: PreMortemOptions = {
           model: opts.model,
           signal: controller.signal,
+          onStatusMessage,
         };
         const pmResult = await runPreMortem(mergedContent, resolvedDir, pmOpts);
         await writePreMortemResult(pmResult, resolvedDir);
@@ -355,6 +462,9 @@ program
           `Pre-mortem: ${pmResult.scenarios.length} failure scenarios → ${resolvedDir}/pre-mortem.md`,
         );
       }
+
+      collector.setStage("done");
+      await statusServer.stop();
     } catch (err) {
       if (err instanceof CpcError) {
         console.error(`Error [${err.code}]: ${err.message}`);
@@ -436,7 +546,29 @@ program
         return;
       }
 
+      // Set up status server for live monitoring
+      const collector = new StatusCollector({
+        pid: process.pid,
+        command: "run",
+        configPath: opts.config ?? opts.mergeConfig ?? "",
+        outputDir: "",
+      });
+      const statusServer = new StatusServer(collector);
+      const socketPath = `${os.tmpdir()}/cpc-${process.pid}.sock`;
+      await statusServer.start(socketPath);
+
+      controller.signal.addEventListener(
+        "abort",
+        () => {
+          statusServer.stop();
+        },
+        { once: true },
+      );
+
+      const onStatusMessage = collector.createCallback();
+
       // 1. Generate
+      collector.setStage("generating");
       const generateOpts: GenerateOptions = opts.multi
         ? {
             promptFiles: await Promise.all(
@@ -447,15 +579,18 @@ program
               : undefined,
             debug: opts.debug ?? false,
             signal: controller.signal,
+            onStatusMessage,
           }
         : {
             prompt: (await readPromptFile(promptFile)).content,
             debug: opts.debug ?? false,
             signal: controller.signal,
+            onStatusMessage,
           };
 
       const planSet = await generate(genConfig, generateOpts);
       await writePlanSet(planSet, planSet.runDir);
+      collector.setOutputDir(planSet.runDir);
 
       const variantNames = planSet.plans.map((p) => p.variant.name);
       printGenerateSummary(planSet.runDir, planSet.plans.length, variantNames);
@@ -463,8 +598,10 @@ program
       // 2. Evaluate (optional — skipped when --skip-eval is set)
       let evalResult = undefined;
       if (!opts.skipEval) {
+        collector.setStage("evaluating");
         evalResult = await evaluate(planSet, mergeConfig, {
           signal: controller.signal,
+          onStatusMessage,
         });
         await writeEvalResult(evalResult, planSet.runDir);
         printEvalSummary(
@@ -475,7 +612,11 @@ program
       }
 
       // 3. Merge
-      const mergeResult = await merge(planSet, mergeConfig, evalResult);
+      collector.setStage("merging");
+      const mergeResult = await merge(planSet, mergeConfig, {
+        evalResult,
+        onStatusMessage,
+      });
       await writeMergeResult(mergeResult, planSet.runDir);
 
       printMergeSummary(planSet.runDir, mergeResult.strategy);
@@ -483,18 +624,22 @@ program
       // 4. Verify (optional — enabled when --verify is set)
       let verifyResult = undefined;
       if (opts.verify) {
+        collector.setStage("verifying");
         const verifyOpts: VerifyOptions = {
           model: opts.verifyModel,
           signal: controller.signal,
+          onStatusMessage,
         };
         verifyResult = await verify(mergeResult, planSet, verifyOpts);
         await writeVerifyResult(verifyResult, planSet.runDir);
         printVerifySummary(verifyResult.gates, verifyResult.pass);
 
         if (opts.preMortem) {
+          collector.setStage("pre-mortem");
           const pmOpts: PreMortemOptions = {
             model: opts.verifyModel,
             signal: controller.signal,
+            onStatusMessage,
           };
           const pmResult = await runPreMortem(
             mergeResult.content,
@@ -507,6 +652,9 @@ program
           );
         }
       }
+
+      collector.setStage("done");
+      await statusServer.stop();
 
       const pipelineResult: PipelineResult = {
         planSet,

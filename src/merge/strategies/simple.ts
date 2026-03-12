@@ -7,6 +7,7 @@ import type { EvalResult } from "../../types/evaluation.js";
 import { MergeError } from "../../types/errors.js";
 import { NdjsonLogger } from "../../pipeline/logger.js";
 import { SessionProgress } from "../../pipeline/progress.js";
+import type { OnStatusMessage } from "../../monitor/types.js";
 import type { MergeStrategy } from "../strategy.js";
 import { buildMergePrompt } from "../prompt-builder.js";
 
@@ -18,6 +19,7 @@ export class SimpleStrategy implements MergeStrategy {
     config: MergeConfig,
     mergePlanPath: string,
     evalResult?: EvalResult,
+    onStatusMessage?: OnStatusMessage,
   ): Promise<MergeResult> {
     const prompt = buildMergePrompt(plans, config, mergePlanPath, evalResult);
     const logPath = mergePlanPath.replace(/\.md$/, ".log");
@@ -50,6 +52,7 @@ export class SimpleStrategy implements MergeStrategy {
       })) {
         messages.push(msg);
         progress.onMessage(msg);
+        onStatusMessage?.(`merge-${this.name}`, msg);
         await logger.write(msg);
       }
     } finally {
