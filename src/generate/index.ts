@@ -2,11 +2,18 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { PlanSet } from "../types/plan.js";
 import type { GenerateConfig } from "../types/config.js";
+import type { OnStatusMessage } from "../monitor/types.js";
 import { IncompatibleFlagsError } from "../types/errors.js";
-import { buildVariantPrompts, buildMultiFilePrompts } from "./prompt-builder.js";
+import {
+  buildVariantPrompts,
+  buildMultiFilePrompts,
+} from "./prompt-builder.js";
 import type { VariantPrompt } from "./prompt-builder.js";
 import { generateLenses } from "./auto-lenses.js";
-import { runParallelSessions, runSequentialSessions } from "./session-runner.js";
+import {
+  runParallelSessions,
+  runSequentialSessions,
+} from "./session-runner.js";
 
 export interface GenerateOptions {
   /** Base prompt content (single-file mode) */
@@ -21,6 +28,8 @@ export interface GenerateOptions {
   readonly debug?: boolean | string;
   /** Parent abort signal for graceful shutdown */
   readonly signal?: AbortSignal;
+  /** Callback for status message forwarding */
+  readonly onStatusMessage?: OnStatusMessage;
 }
 
 /** Create a timestamped run directory */
@@ -39,17 +48,16 @@ function createRunDirName(): string {
 }
 
 /** Validate flag combinations */
-function validateFlags(
-  options: GenerateOptions,
-  config: GenerateConfig,
-): void {
+function validateFlags(options: GenerateOptions, config: GenerateConfig): void {
   const isMulti = !!options.promptFiles;
 
   if (isMulti && config.autoLenses) {
     throw new IncompatibleFlagsError("auto-lenses requires single-file mode");
   }
   if (isMulti && config.sequentialDiversity) {
-    throw new IncompatibleFlagsError("sequential diversity requires single-file mode");
+    throw new IncompatibleFlagsError(
+      "sequential diversity requires single-file mode",
+    );
   }
   if (options.debug && isMulti) {
     throw new IncompatibleFlagsError("debug requires single-file mode");
@@ -62,8 +70,11 @@ function applyDebugOverrides(
   debugVariant?: string,
 ): GenerateConfig {
   const variant = debugVariant
-    ? config.variants.find(v => v.name === debugVariant) ?? { name: debugVariant, guidance: "" }
-    : config.variants[0] ?? { name: "baseline", guidance: "" };
+    ? (config.variants.find((v) => v.name === debugVariant) ?? {
+        name: debugVariant,
+        guidance: "",
+      })
+    : (config.variants[0] ?? { name: "baseline", guidance: "" });
 
   return {
     ...config,
@@ -84,7 +95,10 @@ export async function generate(
 
   // Apply debug overrides
   const resolvedConfig = options.debug
-    ? applyDebugOverrides(config, typeof options.debug === "string" ? options.debug : undefined)
+    ? applyDebugOverrides(
+        config,
+        typeof options.debug === "string" ? options.debug : undefined,
+      )
     : config;
 
   // Determine prompt name and base dir
@@ -124,8 +138,18 @@ export async function generate(
 
   // Run sessions
   const plans = resolvedConfig.sequentialDiversity
-    ? await runSequentialSessions(variantPrompts, resolvedConfig, options.signal)
-    : await runParallelSessions(variantPrompts, resolvedConfig, options.signal);
+    ? await runSequentialSessions(
+        variantPrompts,
+        resolvedConfig,
+        options.signal,
+        options.onStatusMessage,
+      )
+    : await runParallelSessions(
+        variantPrompts,
+        resolvedConfig,
+        options.signal,
+        options.onStatusMessage,
+      );
 
   return {
     plans,

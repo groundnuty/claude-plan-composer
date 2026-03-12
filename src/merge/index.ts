@@ -3,12 +3,18 @@ import type { PlanSet } from "../types/plan.js";
 import type { MergeConfig } from "../types/config.js";
 import type { MergeResult } from "../types/merge-result.js";
 import type { EvalResult } from "../types/evaluation.js";
+import type { OnStatusMessage } from "../monitor/types.js";
 import { MergeError } from "../types/errors.js";
 import type { MergeStrategy } from "./strategy.js";
 import { SimpleStrategy } from "./strategies/simple.js";
 import { SubagentDebateStrategy } from "./strategies/subagent-debate.js";
 import { AgentTeamsStrategy } from "./strategies/agent-teams.js";
 import { isValidMergeInput } from "../generate/validation.js";
+
+export interface MergeOptions {
+  readonly evalResult?: EvalResult;
+  readonly onStatusMessage?: OnStatusMessage;
+}
 
 /** Create a merge strategy by name */
 function createStrategy(name: string): MergeStrategy {
@@ -28,8 +34,10 @@ function createStrategy(name: string): MergeStrategy {
 export async function merge(
   plans: PlanSet,
   config: MergeConfig,
-  evalResult?: EvalResult,
+  options: MergeOptions = {},
 ): Promise<MergeResult> {
+  const { evalResult, onStatusMessage } = options;
+
   // Filter plans by size (skip < 1000 bytes)
   const validPlans = plans.plans.filter((p) => {
     const valid = isValidMergeInput(p.content);
@@ -52,7 +60,13 @@ export async function merge(
 
   const mergePlanPath = path.join(plans.runDir, "merged-plan.md");
   const strategy = createStrategy(config.strategy);
-  return strategy.merge(filteredPlanSet, config, mergePlanPath, evalResult);
+  return strategy.merge(
+    filteredPlanSet,
+    config,
+    mergePlanPath,
+    evalResult,
+    onStatusMessage,
+  );
 }
 
 export type { MergeStrategy } from "./strategy.js";

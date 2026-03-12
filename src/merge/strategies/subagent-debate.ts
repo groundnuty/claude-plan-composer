@@ -7,6 +7,7 @@ import type { EvalResult } from "../../types/evaluation.js";
 import { MergeError } from "../../types/errors.js";
 import { NdjsonLogger } from "../../pipeline/logger.js";
 import { SessionProgress } from "../../pipeline/progress.js";
+import type { OnStatusMessage } from "../../monitor/types.js";
 import type { MergeStrategy } from "../strategy.js";
 import { embedPlan, buildMergeOutputInstruction } from "../prompt-builder.js";
 
@@ -91,6 +92,7 @@ export class SubagentDebateStrategy implements MergeStrategy {
     config: MergeConfig,
     mergePlanPath: string,
     evalResult?: EvalResult,
+    onStatusMessage?: OnStatusMessage,
   ): Promise<MergeResult> {
     // Define one advocate subagent per plan
     const agents: Record<string, AgentDefinition> = {};
@@ -140,6 +142,7 @@ export class SubagentDebateStrategy implements MergeStrategy {
       })) {
         messages.push(msg);
         progress.onMessage(msg);
+        onStatusMessage?.(`merge-${this.name}`, msg);
         await logger.write(msg);
       }
     } finally {

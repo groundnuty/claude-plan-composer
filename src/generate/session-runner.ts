@@ -9,6 +9,7 @@ import {
 } from "../types/errors.js";
 import { NdjsonLogger } from "../pipeline/logger.js";
 import { SessionProgress } from "../pipeline/progress.js";
+import type { OnStatusMessage } from "../monitor/types.js";
 import type { VariantPrompt } from "./prompt-builder.js";
 
 function delay(ms: number): Promise<void> {
@@ -92,6 +93,7 @@ async function runVariantSession(
   vp: VariantPrompt,
   config: GenerateConfig,
   parentSignal?: AbortSignal,
+  onStatusMessage?: OnStatusMessage,
 ): Promise<Plan> {
   const logPath = vp.planPath.replace(/\.md$/, ".log");
   const logger = new NdjsonLogger(logPath);
@@ -138,6 +140,7 @@ async function runVariantSession(
     })) {
       messages.push(msg);
       progress.onMessage(msg);
+      onStatusMessage?.(vp.variant.name, msg);
       await logger.write(msg);
     }
 
@@ -156,13 +159,14 @@ export async function runParallelSessions(
   prompts: VariantPrompt[],
   config: GenerateConfig,
   parentSignal?: AbortSignal,
+  onStatusMessage?: OnStatusMessage,
 ): Promise<Plan[]> {
   const results = await Promise.allSettled(
     prompts.map(async (vp, i) => {
       if (config.staggerMs > 0 && i > 0) {
         await delay(config.staggerMs * i);
       }
-      return runVariantSession(vp, config, parentSignal);
+      return runVariantSession(vp, config, parentSignal, onStatusMessage);
     }),
   );
 
@@ -202,12 +206,13 @@ export async function runSequentialSessions(
   prompts: VariantPrompt[],
   config: GenerateConfig,
   parentSignal?: AbortSignal,
+  onStatusMessage?: OnStatusMessage,
 ): Promise<Plan[]> {
   if (prompts.length < 3) {
     console.warn(
       "Warning: sequential diversity requires >= 3 variants — falling back to parallel",
     );
-    return runParallelSessions(prompts, config, parentSignal);
+    return runParallelSessions(prompts, config, parentSignal, onStatusMessage);
   }
 
   // Wave 1: first half in parallel
@@ -217,6 +222,7 @@ export async function runSequentialSessions(
     wave1Prompts,
     config,
     parentSignal,
+    onStatusMessage,
   );
 
   // Build skeleton from wave 1 (first 20 lines of each plan)
@@ -237,6 +243,7 @@ export async function runSequentialSessions(
     wave2Prompts,
     config,
     parentSignal,
+    onStatusMessage,
   );
 
   return [...wave1Plans, ...wave2Plans];

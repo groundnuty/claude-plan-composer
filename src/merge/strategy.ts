@@ -2,6 +2,7 @@ import type { PlanSet } from "../types/plan.js";
 import type { MergeConfig } from "../types/config.js";
 import type { MergeResult } from "../types/merge-result.js";
 import type { EvalResult } from "../types/evaluation.js";
+import type { OnStatusMessage } from "../monitor/types.js";
 
 /** Interface for all merge strategies */
 export interface MergeStrategy {
@@ -12,5 +13,6 @@ export interface MergeStrategy {
     config: MergeConfig,
     mergePlanPath: string,
     evalResult?: EvalResult,
+    onStatusMessage?: OnStatusMessage,
   ): Promise<MergeResult>;
 }

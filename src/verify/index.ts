@@ -2,6 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { PlanSet } from "../types/plan.js";
 import type { MergeResult } from "../types/merge-result.js";
 import type { VerifyResult } from "../types/evaluation.js";
+import type { OnStatusMessage } from "../monitor/types.js";
 import type { SourcePlanRef } from "./prompt-builder.js";
 import { buildVerifyPrompt } from "./prompt-builder.js";
 import { parseVerifyResponse } from "./gates.js";
@@ -14,6 +15,7 @@ export const DEFAULT_VERIFY_MODEL = "claude-sonnet-4-6";
 export interface VerifyOptions {
   readonly model?: string;
   readonly signal?: AbortSignal;
+  readonly onStatusMessage?: OnStatusMessage;
 }
 
 /**
@@ -69,6 +71,7 @@ export async function verify(
       },
     })) {
       progress.onMessage(msg);
+      options.onStatusMessage?.("verify", msg);
       await logger.write(msg);
 
       // Collect text from assistant messages

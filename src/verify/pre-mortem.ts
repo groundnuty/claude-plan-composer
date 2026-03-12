@@ -1,4 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { OnStatusMessage } from "../monitor/types.js";
 import { NdjsonLogger } from "../pipeline/logger.js";
 import { SessionProgress } from "../pipeline/progress.js";
 
@@ -20,6 +21,7 @@ export interface PreMortemResult {
 export interface PreMortemOptions {
   readonly model?: string;
   readonly signal?: AbortSignal;
+  readonly onStatusMessage?: OnStatusMessage;
 }
 
 /** Default model — matches verify default */
@@ -247,6 +249,7 @@ export async function runPreMortem(
       },
     })) {
       progress.onMessage(msg);
+      options.onStatusMessage?.("pre-mortem", msg);
       await logger.write(msg);
 
       if (
