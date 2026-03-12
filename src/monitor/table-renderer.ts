@@ -12,6 +12,7 @@ const CYAN = "\x1b[36m";
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
 
+// eslint-disable-next-line no-control-regex
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g;
 
 /** Conditionally wrap text in ANSI color codes. */
