@@ -54,8 +54,8 @@ export async function verify(
       prompt,
       options: {
         model,
-        maxTurns: 3,
-        tools: [],
+        maxTurns: 10,
+        tools: ["WebSearch"],
         permissionMode: "bypassPermissions" as const,
         allowDangerouslySkipPermissions: true,
         settingSources: [],

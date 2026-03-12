@@ -6,6 +6,7 @@ import { NdjsonLogger } from "../pipeline/logger.js";
 import { SessionProgress } from "../pipeline/progress.js";
 import { buildEvalPrompt } from "./prompt-builder.js";
 import { parseEvalResponse, buildEvalResult } from "./scorer.js";
+import { computePairwiseJaccard } from "./jaccard.js";
 
 /** Default model for evaluation sessions — cheap haiku for cost efficiency */
 export const DEFAULT_EVAL_MODEL = "claude-haiku-4-5-20251001";
@@ -78,6 +79,13 @@ export async function evaluate(
     await logger.close();
   }
 
+  const jaccard = computePairwiseJaccard(planSet.plans);
+  if (jaccard.warning) {
+    console.warn(
+      `Warning: ${jaccard.warning} (mean=${jaccard.mean.toFixed(3)})`,
+    );
+  }
+
   const rawResponse = parseEvalResponse(responseText);
-  return buildEvalResult(rawResponse, config.evalConsensus);
+  return { ...buildEvalResult(rawResponse, config.evalConsensus), jaccard };
 }

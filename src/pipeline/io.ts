@@ -4,6 +4,7 @@ import * as path from "node:path";
 import type { Plan, PlanMetadata, PlanSet, TokenUsage } from "../types/plan.js";
 import type { MergeResult } from "../types/merge-result.js";
 import type { EvalResult, VerifyResult } from "../types/evaluation.js";
+import type { PreMortemResult } from "../verify/pre-mortem.js";
 import { PlanExtractionError } from "../types/errors.js";
 
 /** Write a PlanSet to disk: plan-*.md + plan-*.meta.json + latest symlink */
@@ -166,6 +167,18 @@ export async function writeVerifyResult(
 ): Promise<void> {
   await fs.writeFile(
     path.join(dir, "verification-report.json"),
+    JSON.stringify(result, null, 2),
+  );
+}
+
+/** Write pre-mortem result to disk: pre-mortem.md + pre-mortem.json */
+export async function writePreMortemResult(
+  result: PreMortemResult,
+  dir: string,
+): Promise<void> {
+  await fs.writeFile(path.join(dir, "pre-mortem.md"), result.markdown);
+  await fs.writeFile(
+    path.join(dir, "pre-mortem.json"),
     JSON.stringify(result, null, 2),
   );
 }

@@ -14,6 +14,7 @@ import {
   writeMergeResult,
   writeEvalResult,
   writeVerifyResult,
+  writePreMortemResult,
 } from "../pipeline/io.js";
 import { generate } from "../generate/index.js";
 import type { GenerateOptions } from "../generate/index.js";
@@ -22,6 +23,8 @@ import { evaluate } from "../evaluate/index.js";
 import type { EvaluateOptions } from "../evaluate/index.js";
 import { verify } from "../verify/index.js";
 import type { VerifyOptions } from "../verify/index.js";
+import { runPreMortem } from "../verify/pre-mortem.js";
+import type { PreMortemOptions } from "../verify/pre-mortem.js";
 import { CpcError } from "../types/errors.js";
 import type { PipelineResult } from "../types/pipeline.js";
 
@@ -290,6 +293,7 @@ program
   )
   .option("--config <file>", "Merge config file path")
   .option("--model <name>", "Model for verification (default: sonnet)")
+  .option("--pre-mortem", "Run pre-mortem failure analysis after verification")
   .action(async (plansDir: string, opts) => {
     try {
       const resolvedDir = path.resolve(plansDir);
@@ -338,6 +342,18 @@ program
       await writeVerifyResult(verifyResult, resolvedDir);
 
       printVerifySummary(verifyResult.gates, verifyResult.pass);
+
+      if (opts.preMortem) {
+        const pmOpts: PreMortemOptions = {
+          model: opts.model,
+          signal: controller.signal,
+        };
+        const pmResult = await runPreMortem(mergedContent, resolvedDir, pmOpts);
+        await writePreMortemResult(pmResult, resolvedDir);
+        console.error(
+          `Pre-mortem: ${pmResult.scenarios.length} failure scenarios → ${resolvedDir}/pre-mortem.md`,
+        );
+      }
     } catch (err) {
       if (err instanceof CpcError) {
         console.error(`Error [${err.code}]: ${err.message}`);
@@ -383,6 +399,7 @@ program
   .option("--skip-eval", "Skip pre-merge evaluation")
   .option("--verify", "Run post-merge verification")
   .option("--verify-model <name>", "Model for verification (default: sonnet)")
+  .option("--pre-mortem", "Run pre-mortem failure analysis after verification")
   .action(async (promptFile: string, extraFiles: string[], opts) => {
     try {
       // Resolve generate config
@@ -472,6 +489,22 @@ program
         verifyResult = await verify(mergeResult, planSet, verifyOpts);
         await writeVerifyResult(verifyResult, planSet.runDir);
         printVerifySummary(verifyResult.gates, verifyResult.pass);
+
+        if (opts.preMortem) {
+          const pmOpts: PreMortemOptions = {
+            model: opts.verifyModel,
+            signal: controller.signal,
+          };
+          const pmResult = await runPreMortem(
+            mergeResult.content,
+            planSet.runDir,
+            pmOpts,
+          );
+          await writePreMortemResult(pmResult, planSet.runDir);
+          console.error(
+            `Pre-mortem: ${pmResult.scenarios.length} failure scenarios → ${planSet.runDir}/pre-mortem.md`,
+          );
+        }
       }
 
       const pipelineResult: PipelineResult = {

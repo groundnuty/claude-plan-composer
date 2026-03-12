@@ -49,6 +49,7 @@ export {
   writeEvalResult,
   readEvalResult,
   writeVerifyResult,
+  writePreMortemResult,
   loadMcpConfig,
   resolveGenerateConfig,
   resolveMergeConfig,
@@ -66,10 +67,22 @@ export type { MergeStrategy } from "./merge/index.js";
 // Evaluate
 export { evaluate } from "./evaluate/index.js";
 export type { EvaluateOptions } from "./evaluate/index.js";
+export {
+  computePairwiseJaccard,
+  extractHeadings,
+  computeJaccard,
+} from "./evaluate/jaccard.js";
+export type { JaccardResult, JaccardPair } from "./evaluate/jaccard.js";
 
 // Verify
 export { verify } from "./verify/index.js";
 export type { VerifyOptions } from "./verify/index.js";
+export { runPreMortem, parsePreMortemResponse } from "./verify/pre-mortem.js";
+export type {
+  PreMortemResult,
+  PreMortemScenario,
+  PreMortemOptions,
+} from "./verify/pre-mortem.js";
 
 // Pipeline
 export { runPipeline } from "./pipeline/run.js";

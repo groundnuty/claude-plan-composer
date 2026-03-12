@@ -1,9 +1,11 @@
 /** Types for Phase C — evaluate + verify */
 
+import type { JaccardResult } from "../evaluate/jaccard.js";
+
 export interface DimensionScore {
   readonly dimension: string;
-  readonly pass?: boolean;         // binary mode
-  readonly score?: number;         // likert mode (1-5)
+  readonly pass?: boolean; // binary mode
+  readonly score?: number; // likert mode (1-5)
   readonly critique: string;
 }
 
@@ -23,10 +25,15 @@ export interface EvalResult {
   readonly planScores: readonly PlanScore[];
   readonly gaps: readonly Gap[];
   readonly convergence: number;
+  readonly jaccard?: JaccardResult;
 }
 
 export interface VerifyGateResult {
-  readonly gate: "consistency" | "completeness" | "actionability";
+  readonly gate:
+    | "consistency"
+    | "completeness"
+    | "actionability"
+    | "factual_accuracy";
   readonly pass: boolean;
   readonly findings: readonly string[];
 }

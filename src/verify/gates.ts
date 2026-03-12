@@ -4,7 +4,12 @@ import type { VerifyGateResult, VerifyResult } from "../types/evaluation.js";
 // Valid gate names
 // ---------------------------------------------------------------------------
 
-const VALID_GATES = ["consistency", "completeness", "actionability"] as const;
+const VALID_GATES = [
+  "consistency",
+  "completeness",
+  "actionability",
+  "factual_accuracy",
+] as const;
 type GateName = (typeof VALID_GATES)[number];
 
 // ---------------------------------------------------------------------------

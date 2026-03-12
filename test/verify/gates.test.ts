@@ -69,15 +69,17 @@ describe("parseVerifyResponse — mixed pass/fail gates", () => {
     const text = JSON.stringify(mixedPayload);
     const result: VerifyResult = parseVerifyResponse(text);
     expect(result.gates).toHaveLength(3);
-    expect(result.report).toBe("2 of 3 gates passed. Completeness gate failed.");
+    expect(result.report).toBe(
+      "2 of 3 gates passed. Completeness gate failed.",
+    );
   });
 
   it("returns gate entries with correct pass values", () => {
     const text = JSON.stringify(mixedPayload);
     const result = parseVerifyResponse(text);
-    const consistency = result.gates.find(g => g.gate === "consistency");
-    const completeness = result.gates.find(g => g.gate === "completeness");
-    const actionability = result.gates.find(g => g.gate === "actionability");
+    const consistency = result.gates.find((g) => g.gate === "consistency");
+    const completeness = result.gates.find((g) => g.gate === "completeness");
+    const actionability = result.gates.find((g) => g.gate === "actionability");
     expect(consistency?.pass).toBe(true);
     expect(completeness?.pass).toBe(false);
     expect(actionability?.pass).toBe(true);
@@ -86,9 +88,11 @@ describe("parseVerifyResponse — mixed pass/fail gates", () => {
   it("returns findings as an array", () => {
     const text = JSON.stringify(mixedPayload);
     const result = parseVerifyResponse(text);
-    const completeness = result.gates.find(g => g.gate === "completeness");
+    const completeness = result.gates.find((g) => g.gate === "completeness");
     expect(Array.isArray(completeness?.findings)).toBe(true);
-    expect(completeness?.findings[0]).toBe("Section 3 dropped key risk from beta plan.");
+    expect(completeness?.findings[0]).toBe(
+      "Section 3 dropped key risk from beta plan.",
+    );
   });
 });
 
@@ -112,7 +116,11 @@ describe("parseVerifyResponse — overall pass computation", () => {
   it("overall pass is false when multiple gates fail", () => {
     const allFail = {
       gates: [
-        { gate: "consistency", pass: false, findings: ["Contradictions found."] },
+        {
+          gate: "consistency",
+          pass: false,
+          findings: ["Contradictions found."],
+        },
         { gate: "completeness", pass: false, findings: ["Content missing."] },
         { gate: "actionability", pass: true, findings: ["Steps present."] },
       ],
@@ -157,7 +165,9 @@ describe("parseVerifyResponse — markdown code fence extraction", () => {
     const text = `\`\`\`\n${json}\n\`\`\``;
     const result = parseVerifyResponse(text);
     expect(result.pass).toBe(false);
-    expect(result.report).toBe("2 of 3 gates passed. Completeness gate failed.");
+    expect(result.report).toBe(
+      "2 of 3 gates passed. Completeness gate failed.",
+    );
   });
 
   it("falls back to raw brace extraction when no fences present", () => {
@@ -177,21 +187,21 @@ describe("parseVerifyResponse — uppercase gate name normalisation", () => {
   it("normalises uppercase CONSISTENCY to lowercase", () => {
     const text = JSON.stringify(uppercaseGatesPayload);
     const result = parseVerifyResponse(text);
-    const gates = result.gates.map(g => g.gate);
+    const gates = result.gates.map((g) => g.gate);
     expect(gates).toContain("consistency");
   });
 
   it("normalises uppercase COMPLETENESS to lowercase", () => {
     const text = JSON.stringify(uppercaseGatesPayload);
     const result = parseVerifyResponse(text);
-    const gates = result.gates.map(g => g.gate);
+    const gates = result.gates.map((g) => g.gate);
     expect(gates).toContain("completeness");
   });
 
   it("normalises uppercase ACTIONABILITY to lowercase", () => {
     const text = JSON.stringify(uppercaseGatesPayload);
     const result = parseVerifyResponse(text);
-    const gates = result.gates.map(g => g.gate);
+    const gates = result.gates.map((g) => g.gate);
     expect(gates).toContain("actionability");
   });
 });
@@ -230,6 +240,66 @@ describe("parseVerifyResponse — findings format normalisation", () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseVerifyResponse — factual accuracy gate (Gate 4)
+// ---------------------------------------------------------------------------
+
+describe("parseVerifyResponse — factual accuracy gate", () => {
+  it("parses FACTUAL_ACCURACY gate name", () => {
+    const payload = {
+      gates: [
+        { gate: "consistency", pass: true, findings: [] },
+        { gate: "completeness", pass: true, findings: [] },
+        { gate: "actionability", pass: true, findings: [] },
+        {
+          gate: "FACTUAL_ACCURACY",
+          pass: true,
+          findings: "All citations verified.",
+        },
+      ],
+      report: "4/4 gates passed.",
+    };
+    const result = parseVerifyResponse(JSON.stringify(payload));
+    expect(result.gates).toHaveLength(4);
+    const fa = result.gates.find((g) => g.gate === "factual_accuracy");
+    expect(fa).toBeDefined();
+    expect(fa!.pass).toBe(true);
+  });
+
+  it("overall pass is false when factual_accuracy fails", () => {
+    const payload = {
+      gates: [
+        { gate: "consistency", pass: true, findings: [] },
+        { gate: "completeness", pass: true, findings: [] },
+        { gate: "actionability", pass: true, findings: [] },
+        {
+          gate: "factual_accuracy",
+          pass: false,
+          findings: "Citation X not found.",
+        },
+      ],
+      report: "3/4 gates passed.",
+    };
+    const result = parseVerifyResponse(JSON.stringify(payload));
+    expect(result.pass).toBe(false);
+  });
+
+  it("handles 4-gate all-pass correctly", () => {
+    const payload = {
+      gates: [
+        { gate: "consistency", pass: true, findings: [] },
+        { gate: "completeness", pass: true, findings: [] },
+        { gate: "actionability", pass: true, findings: [] },
+        { gate: "factual_accuracy", pass: true, findings: [] },
+      ],
+      report: "All 4 gates passed.",
+    };
+    const result = parseVerifyResponse(JSON.stringify(payload));
+    expect(result.pass).toBe(true);
+    expect(result.gates).toHaveLength(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // parseVerifyResponse — error cases
 // ---------------------------------------------------------------------------
 
@@ -240,7 +310,9 @@ describe("parseVerifyResponse — error cases", () => {
 
   it("throws on missing gates field", () => {
     const bad = JSON.stringify({ report: "A report but no gates." });
-    expect(() => parseVerifyResponse(bad)).toThrow(/missing required field "gates"/i);
+    expect(() => parseVerifyResponse(bad)).toThrow(
+      /missing required field "gates"/i,
+    );
   });
 
   it("throws on missing report field", () => {
@@ -251,7 +323,9 @@ describe("parseVerifyResponse — error cases", () => {
         { gate: "actionability", pass: true, findings: [] },
       ],
     });
-    expect(() => parseVerifyResponse(bad)).toThrow(/missing required field "report"/i);
+    expect(() => parseVerifyResponse(bad)).toThrow(
+      /missing required field "report"/i,
+    );
   });
 
   it("throws when gates is not an array", () => {

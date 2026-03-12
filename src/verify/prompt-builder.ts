@@ -16,10 +16,11 @@ function embedSourcePlan(plan: SourcePlanRef): string {
 }
 
 /**
- * Build a prompt that asks an LLM to verify a merged plan against 3 quality gates:
- *   1. CONSISTENCY  — internal contradictions
- *   2. COMPLETENESS — content lost from source plans
- *   3. ACTIONABILITY — each section is executable
+ * Build a prompt that asks an LLM to verify a merged plan against 4 quality gates:
+ *   1. CONSISTENCY      — internal contradictions
+ *   2. COMPLETENESS     — content lost from source plans
+ *   3. ACTIONABILITY    — each section is executable
+ *   4. FACTUAL_ACCURACY — citations and factual claims verified
  *
  * Returns JSON: { gates: [{ gate, pass, findings }], report }
  */
@@ -39,7 +40,7 @@ export function buildVerifyPrompt(
   const embeddedSources = sourcePlans.map(embedSourcePlan).join("\n\n");
 
   return `You are a quality-assurance reviewer for AI-generated planning documents. \
-Your task is to verify a merged plan against three quality gates.
+Your task is to verify a merged plan against four quality gates.
 
 ## Merged Plan
 
@@ -55,7 +56,7 @@ ${embeddedSources}
 
 ## Quality Gates
 
-Evaluate the merged plan against each of the following three gates:
+Evaluate the merged plan against each of the following four gates:
 
 ### Gate 1: CONSISTENCY
 Check the merged plan for internal contradictions. Look for:
@@ -87,6 +88,18 @@ Check whether each section of the merged plan is executable. Look for:
 **Pass criterion:** Each major section contains at least one concrete, actionable \
 next step with enough detail to begin execution.
 
+### Gate 4: FACTUAL_ACCURACY
+Verify citations and factual claims in the merged plan. Use the WebSearch tool to:
+- For each citation (Author et al., Year patterns), verify the paper exists \
+and the listed authors are correct.
+- Flag any citation where the authors, title, or year cannot be confirmed.
+- Check key factual claims (tool names, algorithm descriptions) against search results.
+
+If the plan contains no citations or factual claims to verify, mark this gate as PASS.
+
+**Pass criterion:** All citations and key factual claims can be verified or are \
+clearly marked as assumptions.
+
 ## Output Format
 
 Respond ONLY with a JSON object in the following format. Do not include any text \
@@ -107,6 +120,11 @@ outside the JSON block.
     },
     {
       "gate": "ACTIONABILITY",
+      "pass": true,
+      "findings": "Brief summary of findings for this gate. Empty string if no issues."
+    },
+    {
+      "gate": "FACTUAL_ACCURACY",
       "pass": true,
       "findings": "Brief summary of findings for this gate. Empty string if no issues."
     }

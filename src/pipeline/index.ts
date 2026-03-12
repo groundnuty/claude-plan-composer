@@ -6,6 +6,7 @@ export {
   writeEvalResult,
   readEvalResult,
   writeVerifyResult,
+  writePreMortemResult,
 } from "./io.js";
 export {
   resolveGenerateConfig,
