@@ -27,6 +27,7 @@ import { runPreMortem } from "../verify/pre-mortem.js";
 import type { PreMortemOptions } from "../verify/pre-mortem.js";
 import { CpcError } from "../types/errors.js";
 import type { PipelineResult } from "../types/pipeline.js";
+import { monitorCommand } from "./monitor.js";
 
 // ---------------------------------------------------------------------------
 // Signal handling
@@ -528,6 +529,12 @@ program
       process.exitCode = 1;
     }
   });
+
+// ---------------------------------------------------------------------------
+// monitor
+// ---------------------------------------------------------------------------
+
+program.addCommand(monitorCommand);
 
 // ---------------------------------------------------------------------------
 // Parse and run
