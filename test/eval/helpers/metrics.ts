@@ -62,6 +62,73 @@ export function extractSignificantWords(text: string): ReadonlySet<string> {
   return words;
 }
 
+export interface EntropyResult {
+  readonly perNgram: Readonly<Record<number, number>>;
+  readonly mean: number;
+}
+
+/**
+ * Extract ordered array of significant words from text.
+ *
+ * Same regex as extractSignificantWords but returns an array (preserving
+ * order and duplicates) instead of a Set. Needed for n-gram construction.
+ */
+function extractOrderedWords(text: string): readonly string[] {
+  return Array.from(text.toLowerCase().matchAll(/[a-z][a-z0-9]{3,}/g), (m) => m[0]);
+}
+
+/**
+ * Compute Shannon entropy on n-gram frequency distributions across all texts.
+ *
+ * Matches MIMIC (Chen et al., ASE 2025 RT) §4.3 methodology:
+ * - Tokenize all texts into ordered word arrays
+ * - Build sliding-window n-grams for each n-gram size
+ * - Compute H = -Σ p(x) log₂ p(x) on the frequency distribution
+ *
+ * Returns per-n-gram entropy and the mean across all n-gram sizes.
+ */
+export function computeShannonEntropy(
+  texts: readonly string[],
+  ngramSizes: readonly number[] = [1, 2, 3],
+): EntropyResult {
+  const allWords = texts.flatMap(extractOrderedWords);
+  if (allWords.length === 0 || ngramSizes.length === 0) {
+    return { perNgram: {}, mean: 0 };
+  }
+
+  const perNgram: Record<number, number> = {};
+
+  for (const n of ngramSizes) {
+    const freq = new Map<string, number>();
+    let total = 0;
+
+    for (let i = 0; i <= allWords.length - n; i++) {
+      const ngram = allWords.slice(i, i + n).join(" ");
+      freq.set(ngram, (freq.get(ngram) ?? 0) + 1);
+      total++;
+    }
+
+    if (total === 0) {
+      perNgram[n] = 0;
+      continue;
+    }
+
+    let entropy = 0;
+    for (const count of freq.values()) {
+      const p = count / total;
+      entropy -= p * Math.log2(p);
+    }
+    perNgram[n] = entropy;
+  }
+
+  const values = Object.values(perNgram);
+  const mean = values.length > 0
+    ? values.reduce((s, v) => s + v, 0) / values.length
+    : 0;
+
+  return { perNgram, mean };
+}
+
 /**
  * Compute pairwise word-level Jaccard similarity for plan content.
  *

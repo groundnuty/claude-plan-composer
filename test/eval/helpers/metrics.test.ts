@@ -6,6 +6,7 @@ import {
   extractSignificantWords,
   computeWordPairwiseJaccard,
   formatComparisonTable,
+  computeShannonEntropy,
 } from "./metrics.js";
 
 describe("extractAllHeadings", () => {
@@ -184,5 +185,82 @@ describe("formatComparisonTable", () => {
       },
     );
     expect(table).toContain("Warning");
+  });
+});
+
+describe("computeShannonEntropy", () => {
+  it("returns zero entropy for empty input", () => {
+    const result = computeShannonEntropy([]);
+    expect(result.mean).toBe(0);
+    expect(result.perNgram).toEqual({});
+  });
+
+  it("returns zero entropy for text with no significant words", () => {
+    const result = computeShannonEntropy(["a b c"]);
+    expect(result.mean).toBe(0);
+    expect(result.perNgram).toEqual({});
+  });
+
+  it("computes entropy for a single text with uniform distribution", () => {
+    // 4 unique unigrams, each appearing once → H = log2(4) = 2.0
+    const result = computeShannonEntropy(
+      ["alpha beta gamma delta"],
+      [1],
+    );
+    expect(result.perNgram[1]).toBeCloseTo(2.0, 5);
+    expect(result.mean).toBeCloseTo(2.0, 5);
+  });
+
+  it("computes lower entropy for skewed distribution", () => {
+    // "alpha" appears 4x, "beta" once → skewed, lower entropy
+    const result = computeShannonEntropy(
+      ["alpha alpha alpha alpha beta"],
+      [1],
+    );
+    expect(result.perNgram[1]).toBeLessThan(1.0);
+    expect(result.perNgram[1]).toBeGreaterThan(0);
+  });
+
+  it("computes entropy across multiple texts combined", () => {
+    const resultSame = computeShannonEntropy(
+      ["alpha beta gamma", "alpha beta gamma"],
+      [1],
+    );
+    const resultDiverse = computeShannonEntropy(
+      ["alpha beta gamma", "delta epsilon zeta"],
+      [1],
+    );
+    // More diverse vocabulary → higher entropy
+    expect(resultDiverse.mean).toBeGreaterThan(resultSame.mean);
+  });
+
+  it("computes bigram entropy", () => {
+    // "alpha beta gamma delta" → bigrams: "alpha beta", "beta gamma", "gamma delta"
+    // 3 unique bigrams, each once → H = log2(3) ≈ 1.585
+    const result = computeShannonEntropy(
+      ["alpha beta gamma delta"],
+      [2],
+    );
+    expect(result.perNgram[2]).toBeCloseTo(Math.log2(3), 4);
+  });
+
+  it("computes mean across multiple n-gram sizes", () => {
+    const result = computeShannonEntropy(
+      ["alpha beta gamma delta epsilon"],
+      [1, 2, 3],
+    );
+    expect(Object.keys(result.perNgram)).toHaveLength(3);
+    expect(result.perNgram[1]).toBeGreaterThan(0);
+    expect(result.perNgram[2]).toBeGreaterThan(0);
+    expect(result.perNgram[3]).toBeGreaterThan(0);
+    // Mean should be average of the three
+    const values = Object.values(result.perNgram);
+    const expectedMean = values.reduce((s, v) => s + v, 0) / values.length;
+    expect(result.mean).toBeCloseTo(expectedMean, 10);
+  });
+
+  it("defaults to n-gram sizes [1, 2, 3]", () => {
+    const result = computeShannonEntropy(["alpha beta gamma delta epsilon"]);
+    expect(Object.keys(result.perNgram).map(Number).sort()).toEqual([1, 2, 3]);
   });
 });
