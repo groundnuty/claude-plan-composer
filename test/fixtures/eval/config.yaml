@@ -1,0 +1,12 @@
+model: haiku
+max_turns: 20
+timeout_ms: 300000
+prompt: test/fixtures/eval/prompts/task.md
+
+variants:
+  - name: architecture
+    guidance: "Focus on system architecture: components, data flow, integration points"
+  - name: risk
+    guidance: "Focus on risks: failure modes, rollback strategy, monitoring"
+  - name: testing
+    guidance: "Focus on testing: test strategy, coverage, validation gates"

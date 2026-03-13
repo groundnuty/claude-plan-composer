@@ -1,0 +1,10 @@
+model: haiku
+max_turns: 20
+timeout_ms: 300000
+strategy: simple
+comparison_method: holistic
+
+dimensions:
+  - Architecture
+  - Risk Management
+  - Testing Strategy
