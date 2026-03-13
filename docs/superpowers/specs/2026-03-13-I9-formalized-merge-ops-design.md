@@ -37,7 +37,15 @@ Maps to the resolution strategies from Definition 5:
 - `arbitrary` → selection (pick better-argued by confidence)
 - `uncontested` → adopt (only one variant addresses the topic)
 
+**Zod schema:**
+
+```typescript
+const DisagreementTypeSchema = z.enum(["complementary", "trade-off", "arbitrary", "uncontested"]);
+```
+
 **Relationship to existing `ConflictClass`:** The existing type uses `"genuine-tradeoff" | "complementary" | "arbitrary-divergence"`. Mapping functions between old and new will be added when I11/I15 land — not in this feature.
+
+**Note on Definition 1 (Plan):** The existing `Plan` interface in `plan.ts` represents plans as `content: string` (raw markdown). Formal Definition 1 models a plan as an ordered set of sections. Section decomposition is deferred to I7/I11 where it will be done at runtime by LLM extraction. No `Section` type is needed in I9.
 
 ---
 
@@ -183,10 +191,11 @@ const MergeFormalResultSchema = z.object({
 
 ## Success Criteria
 
-- [ ] All 6 interfaces/types are defined with proper `readonly` modifiers
+- [ ] 5 interfaces + 1 union type defined: `Recommendation`, `Disagreement`, `TypedResolution`, `DimensionAnalysis`, `MergeFormalResult`, `DisagreementType`
+- [ ] All types derived from Zod schemas via `z.infer<>` (project convention from `config.ts`)
 - [ ] All Zod schemas validate correctly (accept valid, reject invalid)
 - [ ] JSDoc on each type references the formal definition it mirrors
-- [ ] Definitions 3 and 6 documented as JSDoc (algorithm descriptions, not data types)
+- [ ] Definitions 1, 3, and 6 documented as JSDoc (Definition 1 maps to existing `Plan`; 3 and 6 describe algorithms)
 - [ ] Types exported through `src/index.ts` barrel
 - [ ] `make -f dev.mk check` passes (no existing tests broken)
 - [ ] Eval gate: `make -f dev.mk eval-compare` shows no regression (types-only change)
