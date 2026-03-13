@@ -11,6 +11,7 @@ export interface NdjsonSummary {
   readonly contextTokens: number;
   readonly compactions: number;
   readonly cost: number;
+  readonly durationMs: number;
   readonly sessionId: string;
   readonly lastAction: string;
 }
@@ -33,6 +34,7 @@ export async function parseNdjsonLog(filePath: string): Promise<NdjsonSummary> {
   let contextTokens = 0;
   let compactions = 0;
   let cost = 0;
+  let durationMs = 0;
   let sessionId = "";
   let lastAction = "";
 
@@ -73,6 +75,7 @@ export async function parseNdjsonLog(filePath: string): Promise<NdjsonSummary> {
       }
     } else if (msg.type === "result" && msg.subtype === "success") {
       cost = (msg.total_cost_usd as number) ?? 0;
+      durationMs = (msg.duration_ms as number) ?? 0;
       sessionId = (msg.session_id as string) ?? "";
     } else if (msg.type === "system" && msg.subtype === "compact_boundary") {
       compactions++;
@@ -90,6 +93,7 @@ export async function parseNdjsonLog(filePath: string): Promise<NdjsonSummary> {
     contextTokens,
     compactions,
     cost,
+    durationMs,
     sessionId,
     lastAction,
   };
@@ -107,6 +111,7 @@ function emptySummary(): NdjsonSummary {
     contextTokens: 0,
     compactions: 0,
     cost: 0,
+    durationMs: 0,
     sessionId: "",
     lastAction: "",
   };

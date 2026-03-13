@@ -82,33 +82,39 @@ describe("renderTable", () => {
   });
 
   it("renders totals footer", () => {
-    const state = makeState([makeSession(), makeSession({ name: "plan-02-beta" })]);
+    const state = makeState([
+      makeSession(),
+      makeSession({ name: "plan-02-beta" }),
+    ]);
     const output = renderTable(state, {});
-    expect(output).toContain("generating");
+    expect(output).toContain("stages done");
+    expect(output).toContain("2 done");
   });
 
   it("renders child rows with tree characters", () => {
-    const state = makeState([makeSession({
-      name: "merge-agent-teams",
-      status: "running",
-      children: [
-        {
-          type: "team-member",
-          name: "reliability",
-          taskId: null,
-          status: "running",
-          turns: 8,
-          toolCalls: 3,
-          toolBreakdown: { Read: 2, Glob: 1 },
-          inputTokens: 30000,
-          outputTokens: 8000,
-          cacheCreationTokens: 0,
-          cacheReadTokens: 0,
-          totalTokens: 38000,
-          lastAction: "Read OrderService.java",
-        },
-      ],
-    })]);
+    const state = makeState([
+      makeSession({
+        name: "merge-agent-teams",
+        status: "running",
+        children: [
+          {
+            type: "team-member",
+            name: "reliability",
+            taskId: null,
+            status: "running",
+            turns: 8,
+            toolCalls: 3,
+            toolBreakdown: { Read: 2, Glob: 1 },
+            inputTokens: 30000,
+            outputTokens: 8000,
+            cacheCreationTokens: 0,
+            cacheReadTokens: 0,
+            totalTokens: 38000,
+            lastAction: "Read OrderService.java",
+          },
+        ],
+      }),
+    ]);
     const output = renderTable(state, {});
     expect(output).toContain("reliability");
     expect(output).toContain("\u2514");

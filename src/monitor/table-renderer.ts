@@ -133,6 +133,7 @@ const COL = {
   variant: 26,
   status: 10,
   session: 10,
+  duration: 7,
   turns: 5,
   tools: 5,
   agents: 6,
@@ -158,6 +159,7 @@ function renderSessionRow(
     leftAlign(c(CYAN, s.name, nc), COL.variant),
     leftAlign(statusColor(s.status, nc), COL.status),
     leftAlign(s.sessionId.slice(0, 8), COL.session),
+    rightAlign(formatDuration(s.durationMs), COL.duration),
     rightAlign(String(s.turns), COL.turns),
     rightAlign(String(s.toolCalls), COL.tools),
     rightAlign(`${s.agents.running}/${s.agents.total}`, COL.agents),
@@ -186,7 +188,9 @@ function renderDetailRows(s: SessionState, nc: boolean): string {
   const log = formatBytes(s.logSize);
   const plan = formatBytes(s.planSize);
 
-  const sizeLine = `${indent}${c(DIM, `log:${log}  plan:${plan}  dur:${duration}  cost:${cost}`, nc)}`;
+  const sizeLine =
+    `${indent}log:${c(DIM, log, nc)}  plan:${c(DIM, plan, nc)}` +
+    `  dur:${c(DIM, duration, nc)}  cost:${c(DIM, cost, nc)}`;
   const toolLine = `${indent}${c(DIM, tools, nc)}`;
   const actionLine = `${indent}\u2514\u2500 ${c(DIM, s.lastAction, nc)}`;
 
@@ -210,6 +214,7 @@ function renderChildRows(children: readonly ChildState[], nc: boolean): string {
         name,
         status,
         leftAlign("", COL.session),
+        rightAlign("", COL.duration),
         rightAlign(String(child.turns), COL.turns),
         rightAlign(String(child.toolCalls), COL.tools),
         rightAlign("", COL.agents),
@@ -237,7 +242,7 @@ function groupByStage(
   for (const s of sessions) {
     let stage: Stage;
     if (s.name.startsWith("plan-")) stage = "generate";
-    else if (s.name.startsWith("evaluate")) stage = "evaluate";
+    else if (s.name.startsWith("eval")) stage = "evaluate";
     else if (s.name.startsWith("merge")) stage = "merge";
     else if (s.name.startsWith("verify") || s.name.startsWith("pre-mortem"))
       stage = "verify";
@@ -260,6 +265,7 @@ function renderColumnHeaders(nc: boolean): string {
     leftAlign("VARIANT", COL.variant),
     leftAlign("STATUS", COL.status),
     leftAlign("SESSION", COL.session),
+    rightAlign("DUR", COL.duration),
     rightAlign("TURN", COL.turns),
     rightAlign("TOOL", COL.tools),
     rightAlign("AGNT", COL.agents),
@@ -276,30 +282,116 @@ function renderColumnHeaders(nc: boolean): string {
   return c(BOLD, header, nc);
 }
 
+// ── Stage colors ────────────────────────────────────────────────────────────
+
+const STAGE_COLORS: Record<string, string> = {
+  generate: CYAN,
+  evaluate: YELLOW,
+  merge: GREEN,
+  verify: RED,
+  other: DIM,
+};
+
+function stageColor(stage: string, nc: boolean): string {
+  return c(STAGE_COLORS[stage] ?? DIM, stage.toUpperCase(), nc);
+}
+
 // ── Totals footer ───────────────────────────────────────────────────────────
 
 function renderTotalsFooter(
-  state: PipelineState,
+  _state: PipelineState,
   sessions: readonly SessionState[],
   nc: boolean,
 ): string {
-  const totalTokens = sessions.reduce((sum, s) => sum + s.totalTokens, 0);
-  const totalCost = sessions.reduce((sum, s) => sum + s.cost, 0);
+  const lines: string[] = [];
+
   const running = sessions.filter((s) => s.status === "running").length;
   const done = sessions.filter((s) => s.status === "done").length;
   const failed = sessions.filter((s) => s.status === "failed").length;
+  const genCount = sessions.filter((s) => s.name.startsWith("plan-")).length;
+  const genDone = sessions.filter(
+    (s) => s.name.startsWith("plan-") && s.status === "done",
+  ).length;
+  const genRunning = sessions.filter(
+    (s) => s.name.startsWith("plan-") && s.status === "running",
+  ).length;
 
-  const parts = [
-    `stage:${c(CYAN, state.stage, nc)}`,
-    `sessions:${sessions.length}`,
-    `running:${c(GREEN, String(running), nc)}`,
-    `done:${String(done)}`,
-    failed > 0 ? `failed:${c(RED, String(failed), nc)}` : null,
-    `tokens:${formatTokens(totalTokens)}`,
-    `cost:${formatCost(totalCost)}`,
-  ].filter((p): p is string => p !== null);
+  // Status line
+  const stagesDone = [
+    sessions.some((s) => s.name.startsWith("plan-") && s.status === "done"),
+    sessions.some((s) => s.name.startsWith("eval") && s.status === "done"),
+    sessions.some((s) => s.name.startsWith("merge") && s.status === "done"),
+    sessions.some(
+      (s) =>
+        (s.name.startsWith("verify") || s.name.startsWith("pre-mortem")) &&
+        s.status === "done",
+    ),
+  ].filter(Boolean).length;
 
-  return parts.join("  ");
+  const statusLabel =
+    running > 0
+      ? c(CYAN, "running", nc)
+      : stagesDone === 4
+        ? c(GREEN, "complete", nc)
+        : c(YELLOW, "incomplete", nc);
+
+  lines.push(`  Status: ${statusLabel} — ${stagesDone}/4 stages done`);
+
+  // Plans breakdown
+  if (genCount > 0) {
+    const planParts: string[] = [];
+    if (genDone > 0) planParts.push(`${genDone} done`);
+    if (genRunning > 0) planParts.push(`${genRunning} running`);
+    const genFailed = genCount - genDone - genRunning;
+    if (genFailed > 0) planParts.push(`${genFailed} failed`);
+    lines.push(`  Plans:  ${planParts.join(", ")} (of ${genCount})`);
+  }
+
+  // Log size totals
+  const totalLogBytes = sessions.reduce((sum, s) => sum + s.logSize, 0);
+  if (totalLogBytes > 0) {
+    lines.push(`  Logs:   ${formatBytes(totalLogBytes)} total`);
+  }
+
+  // Token breakdown
+  const totInput = sessions.reduce((sum, s) => sum + s.inputTokens, 0);
+  const totOutput = sessions.reduce((sum, s) => sum + s.outputTokens, 0);
+  const totCacheC = sessions.reduce((sum, s) => sum + s.cacheCreationTokens, 0);
+  const totCacheR = sessions.reduce((sum, s) => sum + s.cacheReadTokens, 0);
+  const totAll = totInput + totOutput + totCacheC + totCacheR;
+
+  if (totAll > 0) {
+    lines.push(
+      `  Tokens: ${formatTokens(totInput)} input, ${formatTokens(totOutput)} output, ` +
+        `${formatTokens(totCacheC)} cache+, ${formatTokens(totCacheR)} cache\u2192 ` +
+        `(${formatTokens(totAll)} total)`,
+    );
+  }
+
+  // Cost
+  const totalCost = sessions.reduce((sum, s) => sum + s.cost, 0);
+  if (totalCost > 0) {
+    lines.push(`  Cost:   ${formatCost(totalCost)}`);
+  }
+
+  // Session summary
+  const sessionParts = [`${done} done`, `${running} running`];
+  if (failed > 0) sessionParts.push(c(RED, `${failed} failed`, nc));
+  lines.push(
+    `  Sessions: ${sessionParts.join(", ")} (${sessions.length} total)`,
+  );
+
+  // Timestamp
+  lines.push("");
+  lines.push(
+    c(
+      DIM,
+      `  ${new Date().toLocaleTimeString("en-US", { hour12: false })}`,
+      nc,
+    ),
+  );
+
+  return lines.join("\n");
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -345,7 +437,7 @@ export function renderTable(
     firstGroup = false;
 
     lines.push(
-      c(DIM, `── ${stage} `, nc) +
+      `── ${stageColor(stage, nc)} ` +
         c(DIM, "─".repeat(Math.max(0, 60 - stage.length - 4)), nc),
     );
 

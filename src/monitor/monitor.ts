@@ -116,7 +116,7 @@ async function buildPostHocState(dir: string): Promise<PipelineState> {
           : 0,
       compactions: summary.compactions,
       cost: summary.cost,
-      durationMs: 0,
+      durationMs: summary.durationMs,
       lastAction: summary.lastAction,
       logSize: logStat.size,
       planSize,
