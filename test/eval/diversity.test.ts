@@ -90,10 +90,26 @@ suite("metamorphic: lens diversity", () => {
         `[diversity] Delta: ${(diverseWordDistance - homoWordDistance).toFixed(4)}`,
       );
 
-      // Metamorphic assertion: diverse lenses produce less word overlap (higher distance)
-      // than homogeneous lenses. Word-level Jaccard reliably captures topical differences
-      // (architecture vs risk vs testing vocabulary) unlike heading-level which is too coarse.
-      expect(diverseWordDistance).toBeGreaterThan(homoWordDistance);
+      // Metamorphic assertion: homogeneous lenses produce higher word overlap than diverse.
+      // With functioning guidance, diverse plans use different vocabulary (architecture vs
+      // risk vs testing) while homogeneous plans share more common terms.
+      //
+      // We assert homo similarity > diverse similarity with a minimum delta to avoid
+      // false positives from LLM randomness. Empirically: with guidance delta ≈ 0.018,
+      // without guidance delta ≈ 0.009 (noise). Threshold of 0.01 catches regressions.
+      const MIN_SIMILARITY_DELTA = 0.01;
+      const similarityDelta = homoWordJaccard.mean - diverseWordJaccard.mean;
+
+      console.log(
+        `[diversity] Similarity delta (homo - diverse): ${similarityDelta.toFixed(4)} (min required: ${MIN_SIMILARITY_DELTA})`,
+      );
+
+      expect(
+        similarityDelta,
+        `Homogeneous lenses should produce higher word similarity than diverse lenses. ` +
+          `Got delta ${similarityDelta.toFixed(4)}, need ≥ ${MIN_SIMILARITY_DELTA}. ` +
+          `This may indicate guidance is not influencing plan content.`,
+      ).toBeGreaterThanOrEqual(MIN_SIMILARITY_DELTA);
 
       // Baseline save/compare (opt-in via env vars)
       const saveBaselineName = process.env["EVAL_SAVE_BASELINE"];
