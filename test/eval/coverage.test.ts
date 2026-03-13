@@ -12,6 +12,7 @@ import {
 import {
   extractDimensionNames,
   checkDimensionCoverage,
+  computeRetentionScore,
 } from "./helpers/metrics.js";
 import {
   saveBaseline,
@@ -72,6 +73,18 @@ suite("metamorphic: dimension coverage", () => {
       const jaccardDistance = 1 - jaccard.mean;
       console.log(`[coverage] Jaccard distance: ${jaccardDistance.toFixed(4)}`);
 
+      // Compute content retention
+      const retention = computeRetentionScore(
+        result.planSet.plans.map((p) => ({ name: p.variant.name, content: p.content })),
+        mergedContent,
+      );
+
+      console.log(`[coverage] Retention — overall: ${retention.overall.toFixed(4)}`);
+      for (const [variant, score] of Object.entries(retention.perVariant)) {
+        console.log(`  ${variant}: ${score.toFixed(4)}`);
+      }
+      console.log(`[coverage] Lost words: ${retention.lost.length}, Retained: ${retention.retained.length}`);
+
       // Baseline save/compare (opt-in via env vars)
       const saveBaselineName = process.env["EVAL_SAVE_BASELINE"];
       const compareBaselineName = process.env["EVAL_COMPARE_BASELINE"];
@@ -87,6 +100,7 @@ suite("metamorphic: dimension coverage", () => {
           jaccardDistance,
           jaccardPairs: jaccard.pairs,
           dimensionCoverage: coverage,
+          retentionScore: retention,
           configPaths: {
             generate: `${mode === "quick" ? "test/fixtures/eval" : "eval/configs/full"}/config.yaml`,
             merge: `${mode === "quick" ? "test/fixtures/eval" : "eval/configs/full"}/merge-config.yaml`,
@@ -110,6 +124,7 @@ suite("metamorphic: dimension coverage", () => {
           jaccardDistance,
           dimensionCoverage: coverage,
           model: genConfig.model,
+          retentionScore: retention.overall,
         });
         console.log(`\n${table}`);
       }
