@@ -4,6 +4,7 @@ export const VariantSchema = z.object({
   name: z.string(),
   guidance: z.string().default(""),
   model: z.string().optional(),
+  promptFile: z.string().optional(),
 });
 
 export const GenerateConfigSchema = z.object({
@@ -12,6 +13,8 @@ export const GenerateConfigSchema = z.object({
   timeoutMs: z.number().default(3_600_000),
   budgetUsd: z.number().optional(),
   workDir: z.string().default(""),
+  prompt: z.string().optional(),
+  context: z.string().optional(),
   additionalDirs: z.array(z.string()).default([]),
   mcpConfig: z.string().optional(),
   strictMcp: z.boolean().default(true),

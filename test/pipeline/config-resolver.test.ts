@@ -8,7 +8,9 @@ import {
 } from "../../src/pipeline/config-resolver.js";
 import { ConfigValidationError } from "../../src/types/errors.js";
 
-const fixtureDir = path.dirname(fileURLToPath(new URL("../fixtures", import.meta.url)));
+const fixtureDir = path.dirname(
+  fileURLToPath(new URL("../fixtures", import.meta.url)),
+);
 const fixturesPath = path.join(fixtureDir, "fixtures");
 
 describe("snakeToCamel", () => {
@@ -270,5 +272,54 @@ describe("config validation errors", () => {
       expect(err).toBeInstanceOf(ConfigValidationError);
       expect((err as ConfigValidationError).code).toBe("CONFIG_VALIDATION");
     }
+  });
+});
+
+describe("schema: promptFile on variants", () => {
+  it("accepts variants with prompt_file", async () => {
+    const config = await resolveGenerateConfig({
+      cliOverrides: {
+        prompt: "prompts/base.md",
+        variants: [
+          { name: "alpha", guidance: "", promptFile: "prompts/alt.md" },
+        ],
+      },
+    });
+    expect(config.variants[0]!.promptFile).toBe("prompts/alt.md");
+  });
+
+  it("defaults promptFile to undefined when not provided", async () => {
+    const config = await resolveGenerateConfig({
+      cliOverrides: {
+        variants: [{ name: "alpha", guidance: "test" }],
+      },
+    });
+    expect(config.variants[0]!.promptFile).toBeUndefined();
+  });
+});
+
+describe("schema: prompt and context fields", () => {
+  it("accepts prompt field in config", async () => {
+    const config = await resolveGenerateConfig({
+      cliOverrides: { prompt: "prompts/task.md" },
+    });
+    expect(config.prompt).toBe("prompts/task.md");
+  });
+
+  it("defaults prompt to undefined", async () => {
+    const config = await resolveGenerateConfig();
+    expect(config.prompt).toBeUndefined();
+  });
+
+  it("accepts context field in config", async () => {
+    const config = await resolveGenerateConfig({
+      cliOverrides: { context: "ctx.md" },
+    });
+    expect(config.context).toBe("ctx.md");
+  });
+
+  it("defaults context to undefined", async () => {
+    const config = await resolveGenerateConfig();
+    expect(config.context).toBeUndefined();
   });
 });
