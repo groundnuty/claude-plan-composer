@@ -5,6 +5,8 @@ import type { JaccardPair } from "../../../src/evaluate/jaccard.js";
 import {
   formatComparisonTable,
   type ComparisonMetrics,
+  type EntropyResult,
+  type RetentionResult,
 } from "./metrics.js";
 
 export interface Baseline {
@@ -17,6 +19,8 @@ export interface Baseline {
   readonly jaccardDistance: number;
   readonly jaccardPairs: readonly JaccardPair[];
   readonly dimensionCoverage: Record<string, boolean>;
+  readonly shannonEntropy?: EntropyResult;
+  readonly retentionScore?: RetentionResult;
   readonly configPaths: {
     readonly generate: string;
     readonly merge: string;
@@ -100,6 +104,8 @@ export async function compareBaseline(
     jaccardDistance: baseline.jaccardDistance,
     dimensionCoverage: baseline.dimensionCoverage,
     model: baseline.model,
+    shannonEntropy: baseline.shannonEntropy?.mean,
+    retentionScore: baseline.retentionScore?.overall,
   };
 
   const header = `Comparing against baseline "${baselineName}" (${baseline.timestamp.slice(0, 10)})`;
