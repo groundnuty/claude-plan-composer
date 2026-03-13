@@ -247,6 +247,14 @@ export interface ComparisonMetrics {
   readonly jaccardDistance: number;
   readonly dimensionCoverage: Record<string, boolean>;
   readonly model: string;
+  readonly shannonEntropy?: number;
+  readonly retentionScore?: number;
+}
+
+function formatDelta(delta: number): string {
+  if (Math.abs(delta) < 0.005) return "=";
+  const arrow = delta > 0 ? "↑" : "↓";
+  return `${arrow}${Math.abs(delta).toFixed(2)}`;
 }
 
 /**
@@ -274,15 +282,34 @@ export function formatComparisonTable(
 
   // Jaccard distance
   const jDelta = current.jaccardDistance - baseline.jaccardDistance;
-  const jArrow = jDelta > 0 ? "↑" : jDelta < 0 ? "↓" : "=";
   lines.push(
     padRow(
       "Jaccard distance",
       baseline.jaccardDistance.toFixed(2),
       current.jaccardDistance.toFixed(2),
-      jDelta === 0 ? "=" : `${jArrow}${Math.abs(jDelta).toFixed(2)}`,
+      formatDelta(jDelta),
     ),
   );
+
+  // Shannon entropy
+  if (baseline.shannonEntropy != null || current.shannonEntropy != null) {
+    const bStr = baseline.shannonEntropy != null ? baseline.shannonEntropy.toFixed(2) : "N/A";
+    const cStr = current.shannonEntropy != null ? current.shannonEntropy.toFixed(2) : "N/A";
+    const delta = baseline.shannonEntropy != null && current.shannonEntropy != null
+      ? formatDelta(current.shannonEntropy - baseline.shannonEntropy)
+      : "—";
+    lines.push(padRow("Shannon entropy", bStr, cStr, delta));
+  }
+
+  // Retention score
+  if (baseline.retentionScore != null || current.retentionScore != null) {
+    const bStr = baseline.retentionScore != null ? baseline.retentionScore.toFixed(2) : "N/A";
+    const cStr = current.retentionScore != null ? current.retentionScore.toFixed(2) : "N/A";
+    const delta = baseline.retentionScore != null && current.retentionScore != null
+      ? formatDelta(current.retentionScore - baseline.retentionScore)
+      : "—";
+    lines.push(padRow("Retention score", bStr, cStr, delta));
+  }
 
   // Dimension coverage
   const allDims = new Set([

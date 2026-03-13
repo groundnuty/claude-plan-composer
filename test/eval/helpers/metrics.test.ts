@@ -187,6 +187,51 @@ describe("formatComparisonTable", () => {
     );
     expect(table).toContain("Warning");
   });
+
+  it("shows Shannon entropy row", () => {
+    const table = formatComparisonTable(
+      {
+        jaccardDistance: 0.4,
+        dimensionCoverage: {},
+        model: "haiku",
+        shannonEntropy: 3.5,
+        retentionScore: 0.85,
+      },
+      {
+        jaccardDistance: 0.42,
+        dimensionCoverage: {},
+        model: "haiku",
+        shannonEntropy: 3.8,
+        retentionScore: 0.80,
+      },
+    );
+    expect(table).toContain("Shannon entropy");
+    expect(table).toContain("3.50");
+    expect(table).toContain("3.80");
+    expect(table).toContain("Retention score");
+    expect(table).toContain("0.85");
+    expect(table).toContain("0.80");
+  });
+
+  it("shows N/A when baseline lacks new metrics", () => {
+    const table = formatComparisonTable(
+      {
+        jaccardDistance: 0.4,
+        dimensionCoverage: {},
+        model: "haiku",
+      },
+      {
+        jaccardDistance: 0.42,
+        dimensionCoverage: {},
+        model: "haiku",
+        shannonEntropy: 3.8,
+        retentionScore: 0.80,
+      },
+    );
+    expect(table).toContain("Shannon entropy");
+    expect(table).toContain("N/A");
+    expect(table).toContain("Retention score");
+  });
 });
 
 describe("computeShannonEntropy", () => {
