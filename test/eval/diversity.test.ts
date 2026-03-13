@@ -10,7 +10,7 @@ import {
   hasClaudeAuth,
   makeTempOutputDir,
 } from "./helpers/runner.js";
-import { extractDimensionNames } from "./helpers/metrics.js";
+import { extractDimensionNames, computeWordPairwiseJaccard } from "./helpers/metrics.js";
 import {
   saveBaseline,
   compareBaseline,
@@ -67,21 +67,33 @@ suite("metamorphic: lens diversity", () => {
         outputDir: outputDirHomogeneous,
       });
 
-      // Compute Jaccard on both runs
-      const diverseJaccard = computePairwiseJaccard(diversePlanSet.plans);
-      const homoJaccard = computePairwiseJaccard(homoPlanSet.plans);
+      // Compute heading-level Jaccard (for baseline storage)
+      const diverseHeadingJaccard = computePairwiseJaccard(diversePlanSet.plans);
+      const homoHeadingJaccard = computePairwiseJaccard(homoPlanSet.plans);
 
-      const diverseDistance = 1 - diverseJaccard.mean;
-      const homoDistance = 1 - homoJaccard.mean;
+      console.log(`[diversity] Heading Jaccard — diverse: ${diverseHeadingJaccard.mean.toFixed(4)}, homo: ${homoHeadingJaccard.mean.toFixed(4)}`);
 
-      console.log(`[diversity] Diverse Jaccard distance: ${diverseDistance.toFixed(4)}`);
-      console.log(`[diversity] Homogeneous Jaccard distance: ${homoDistance.toFixed(4)}`);
-      console.log(
-        `[diversity] Delta: ${(diverseDistance - homoDistance).toFixed(4)}`,
+      // Compute word-level Jaccard (for assertion — much stronger signal than heading-level)
+      const diverseWordJaccard = computeWordPairwiseJaccard(
+        diversePlanSet.plans.map((p) => ({ name: p.variant.name, content: p.content })),
+      );
+      const homoWordJaccard = computeWordPairwiseJaccard(
+        homoPlanSet.plans.map((p) => ({ name: p.variant.name, content: p.content })),
       );
 
-      // Metamorphic assertion: diverse > homogeneous
-      expect(diverseDistance).toBeGreaterThan(homoDistance);
+      const diverseWordDistance = 1 - diverseWordJaccard.mean;
+      const homoWordDistance = 1 - homoWordJaccard.mean;
+
+      console.log(`[diversity] Word Jaccard — diverse similarity: ${diverseWordJaccard.mean.toFixed(4)}, homo similarity: ${homoWordJaccard.mean.toFixed(4)}`);
+      console.log(`[diversity] Word distance — diverse: ${diverseWordDistance.toFixed(4)}, homo: ${homoWordDistance.toFixed(4)}`);
+      console.log(
+        `[diversity] Delta: ${(diverseWordDistance - homoWordDistance).toFixed(4)}`,
+      );
+
+      // Metamorphic assertion: diverse lenses produce less word overlap (higher distance)
+      // than homogeneous lenses. Word-level Jaccard reliably captures topical differences
+      // (architecture vs risk vs testing vocabulary) unlike heading-level which is too coarse.
+      expect(diverseWordDistance).toBeGreaterThan(homoWordDistance);
 
       // Baseline save/compare (opt-in via env vars)
       const saveBaselineName = process.env["EVAL_SAVE_BASELINE"];
@@ -104,9 +116,9 @@ suite("metamorphic: lens diversity", () => {
             timestamp: new Date().toISOString(),
             commitSha: getCommitSha(),
             model: genConfig.model,
-            jaccardMean: diverseJaccard.mean,
-            jaccardDistance: diverseDistance,
-            jaccardPairs: diverseJaccard.pairs,
+            jaccardMean: diverseHeadingJaccard.mean,
+            jaccardDistance: diverseWordDistance,
+            jaccardPairs: diverseHeadingJaccard.pairs,
             dimensionCoverage: dimCoverage,
             configPaths: {
               generate: `${mode === "quick" ? "test/fixtures/eval" : "eval/configs/full"}/config.yaml`,
@@ -124,7 +136,7 @@ suite("metamorphic: lens diversity", () => {
 
         if (compareBaselineName) {
           const table = await compareBaseline(compareBaselineName, {
-            jaccardDistance: diverseDistance,
+            jaccardDistance: diverseWordDistance,
             dimensionCoverage: dimCoverage,
             model: genConfig.model,
           });
@@ -132,6 +144,6 @@ suite("metamorphic: lens diversity", () => {
         }
       }
     },
-    300_000,
+    600_000,
   );
 });

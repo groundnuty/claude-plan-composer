@@ -47,6 +47,62 @@ export function checkDimensionCoverage(
   return result;
 }
 
+/**
+ * Extract significant words (≥4 chars, lowercased, alphanumeric only) from text.
+ *
+ * Filters out short words (common stop words: the, and, for, etc.) to focus
+ * on content-bearing terms. Used for word-level Jaccard which gives a much
+ * stronger diversity signal than heading-level Jaccard.
+ */
+export function extractSignificantWords(text: string): ReadonlySet<string> {
+  const words = new Set<string>();
+  for (const match of text.toLowerCase().matchAll(/[a-z][a-z0-9]{3,}/g)) {
+    words.add(match[0]);
+  }
+  return words;
+}
+
+/**
+ * Compute pairwise word-level Jaccard similarity for plan content.
+ *
+ * Returns mean similarity across all C(N,2) pairs. Unlike heading-level
+ * Jaccard (which is too coarse for haiku), word-level Jaccard reliably
+ * differentiates plans with different topical focus.
+ */
+export function computeWordPairwiseJaccard(
+  plans: readonly { readonly name: string; readonly content: string }[],
+): { readonly mean: number; readonly pairs: readonly { readonly a: string; readonly b: string; readonly similarity: number }[] } {
+  if (plans.length < 2) {
+    return { mean: 0, pairs: [] };
+  }
+
+  const wordSets = plans.map((p) => ({
+    name: p.name,
+    words: extractSignificantWords(p.content),
+  }));
+
+  const pairs: { readonly a: string; readonly b: string; readonly similarity: number }[] = [];
+  for (let i = 0; i < wordSets.length; i++) {
+    for (let j = i + 1; j < wordSets.length; j++) {
+      const a = wordSets[i]!;
+      const b = wordSets[j]!;
+      const union = new Set([...a.words, ...b.words]);
+      if (union.size === 0) {
+        pairs.push({ a: a.name, b: b.name, similarity: 0 });
+        continue;
+      }
+      let intersection = 0;
+      for (const word of a.words) {
+        if (b.words.has(word)) intersection++;
+      }
+      pairs.push({ a: a.name, b: b.name, similarity: intersection / union.size });
+    }
+  }
+
+  const mean = pairs.reduce((sum, p) => sum + p.similarity, 0) / pairs.length;
+  return { mean, pairs };
+}
+
 export interface ComparisonMetrics {
   readonly jaccardDistance: number;
   readonly dimensionCoverage: Record<string, boolean>;
