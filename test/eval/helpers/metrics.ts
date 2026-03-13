@@ -251,6 +251,7 @@ export interface ComparisonMetrics {
   readonly retentionScore?: number;
 }
 
+/** Format delta for comparison table. Values within ±0.005 show "=" to suppress floating-point noise. */
 function formatDelta(delta: number): string {
   if (Math.abs(delta) < 0.005) return "=";
   const arrow = delta > 0 ? "↑" : "↓";

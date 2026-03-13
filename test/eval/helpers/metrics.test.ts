@@ -232,6 +232,28 @@ describe("formatComparisonTable", () => {
     expect(table).toContain("N/A");
     expect(table).toContain("Retention score");
   });
+
+  it("shows N/A and em-dash delta when current lacks new metrics", () => {
+    const table = formatComparisonTable(
+      {
+        jaccardDistance: 0.4,
+        dimensionCoverage: {},
+        model: "haiku",
+        shannonEntropy: 3.5,
+        retentionScore: 0.85,
+      },
+      {
+        jaccardDistance: 0.42,
+        dimensionCoverage: {},
+        model: "haiku",
+      },
+    );
+    expect(table).toContain("Shannon entropy");
+    expect(table).toContain("3.50");
+    expect(table).toContain("N/A");
+    expect(table).toContain("—");
+    expect(table).toContain("Retention score");
+  });
 });
 
 describe("computeShannonEntropy", () => {
