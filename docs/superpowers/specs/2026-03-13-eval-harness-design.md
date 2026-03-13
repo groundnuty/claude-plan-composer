@@ -11,6 +11,8 @@ Pure test infrastructure in `test/eval/` (no new `src/` code). Two metamorphic t
 ## File Structure
 
 ```
+vitest.eval.config.ts              — dedicated vitest config for eval tests (like vitest.e2e.config.ts)
+
 test/
   eval/
     diversity.test.ts              — metamorphic: diverse lenses > homogeneous
@@ -25,9 +27,6 @@ test/
       merge-config.yaml            — merge config: 3 dimensions, simple strategy
       prompts/
         task.md                    — small planning task for eval runs
-        lens-architecture.md       — "Focus on system architecture"
-        lens-risk.md               — "Focus on risks and failure modes"
-        lens-testing.md            — "Focus on testing strategy"
 
 eval/
   configs/
@@ -68,12 +67,31 @@ Designed to be cheap while exercising the core mechanism.
 
 **Task**: A small, concrete planning task (~3 sentences). Something like "Plan a REST API migration from v1 to v2."
 
-**3 lenses** (short, focused prompts):
-- `lens-architecture.md` — "Focus on system architecture: components, data flow, integration points"
-- `lens-risk.md` — "Focus on risks: failure modes, rollback strategy, monitoring"
-- `lens-testing.md` — "Focus on testing: test strategy, coverage, validation gates"
+**3 lenses** delivered as `guidance` strings in the config YAML (not `promptFile`). This means the base `prompt` file (`task.md`) provides the task description, and each variant's `guidance` field adds the lens perspective. Using `guidance` (not `promptFile`) is important because `promptFile` would replace the base prompt entirely.
 
-**Generate config**: haiku model, 20 turns, 300s timeout.
+Lens guidance strings:
+- architecture: "Focus on system architecture: components, data flow, integration points"
+- risk: "Focus on risks: failure modes, rollback strategy, monitoring"
+- testing: "Focus on testing: test strategy, coverage, validation gates"
+
+**Generate config** (`test/fixtures/eval/config.yaml`):
+
+```yaml
+model: haiku
+max_turns: 20
+timeout_ms: 300000
+prompt: test/fixtures/eval/prompts/task.md    # path relative to project root (CWD)
+
+variants:
+  - name: architecture
+    guidance: "Focus on system architecture: components, data flow, integration points"
+  - name: risk
+    guidance: "Focus on risks: failure modes, rollback strategy, monitoring"
+  - name: testing
+    guidance: "Focus on testing: test strategy, coverage, validation gates"
+```
+
+Note: `prompt` path must be relative to the project root (CWD when vitest runs), not relative to the config file. `materializeConfig()` reads it via `fs.readFile()`.
 
 **Merge config**: 3 dimensions (Architecture, Risk Management, Testing Strategy), `simple` strategy, `holistic` comparison.
 
@@ -85,17 +103,20 @@ Designed to be cheap while exercising the core mechanism.
 
 **Mechanism**:
 1. Run A: `generate()` with 3 different lenses (diverse, normal mode)
-2. Run B: `generate()` with the same lens repeated 3 times (homogeneous control — reuses `lens-architecture.md` for all 3)
+2. Run B: `generate()` with the same lens guidance repeated 3 times (homogeneous control — reuses architecture guidance for all 3)
 3. Compute `computePairwiseJaccard()` on each run's plan variants
 4. Assert: Run A's mean Jaccard distance (1 - similarity) > Run B's mean Jaccard distance
+
+**Note on heading extraction**: `computePairwiseJaccard()` internally uses `extractHeadings()` which only matches `##` headings. The research spec mentions `#`, `##`, `###`, but `##`-only is sufficient for diversity measurement since LLM-generated plans predominantly use `##` for sections. If this proves insufficient, a wrapper can be added later.
 
 **Details**:
 - Uses `generate()` library function directly, not CLI
 - Resolves eval fixture configs via `resolveGenerateConfig()`
-- For Run B, overrides `config.variants` to repeat the first lens 3 times
+- For Run B, creates homogeneous variants with **distinct names** (`architecture-1`, `architecture-2`, `architecture-3`) but the same guidance string. Distinct names are required because `computePairwiseJaccard()` uses `variant.name` as pair labels.
+- Both runs must use a temp directory for `outputDir` (in `GenerateOptions`) to avoid polluting the working tree. Clean up in `afterAll`.
 - Prints both Jaccard distances and the delta for inspection
 - Test timeout: 300s (5 minutes) — makes 6 LLM calls total
-- Skip condition: `ANTHROPIC_API_KEY` not set (same pattern as `test/e2e/`)
+- Skip condition: checks both `ANTHROPIC_API_KEY` env var and `claude` CLI availability (same pattern as `test/e2e/pipeline.test.ts`)
 - Respects `EVAL_MODE` to pick quick vs full configs
 
 **If `EVAL_SAVE_BASELINE` is set**: after assertions pass, saves the diverse run results as a named baseline.
@@ -110,14 +131,19 @@ Designed to be cheap while exercising the core mechanism.
 2. Read dimension names from the merge config
 3. Check that the merged plan contains a section for each dimension
 
-**Dimension matching**: Extract all markdown headings (`#`, `##`, `###`) from the merged plan. For each configured dimension, check if any heading contains the dimension name as a case-insensitive substring. Log which dimensions were found and which were missing.
+**Dimension extraction**: `MergeConfig.dimensions` is a union type — entries can be plain strings (`"Architecture"`) or weighted objects (`{ name: "Architecture", weight: 3 }`). Extract dimension names via:
 
-**`extractAllHeadings()`**: A helper in `test/eval/helpers/metrics.ts` that extracts headings at all levels (`#`, `##`, `###`). This differs from `extractHeadings()` in `jaccard.ts` which only extracts `##`.
+```typescript
+const dimensionNames = mergeConfig.dimensions.map(d => typeof d === "string" ? d : d.name);
+```
+
+**Heading matching**: Extract all markdown headings (`#`, `##`, `###`) from the merged plan using `extractAllHeadings()` — a helper in `test/eval/helpers/metrics.ts` that extracts headings at all levels. This differs from `extractHeadings()` in `jaccard.ts` which only extracts `##`. For each configured dimension, check if any heading contains the dimension name as a case-insensitive substring. Log which dimensions were found and which were missing.
 
 **Details**:
 - Uses `runPipeline()` from `src/pipeline/run.ts`
+- Must provide `outputDir` in `RunOptions.generateOptions` pointing to a temp directory to avoid polluting the working tree. Clean up in `afterAll`.
 - Test timeout: 600s (10 minutes) — runs the full pipeline
-- Skip condition: same as diversity test
+- Skip condition: same as diversity test (API key or CLI check)
 - Respects `EVAL_MODE`
 - Saves/compares baselines via same env vars
 
@@ -187,13 +213,21 @@ Not automatic. Opt-in via environment variables:
 
 ## 6. Vitest Config & Makefile Integration
 
-### Vitest Exclusion
+### Vitest Config
 
-`test/eval/` added to the exclude list alongside `test/e2e/`:
+A dedicated `vitest.eval.config.ts` (following the existing `vitest.e2e.config.ts` pattern) includes only `test/eval/**/*.test.ts` and sets appropriate `testTimeout`. The default `vitest.config.ts` does NOT need modification — `test/eval/` is already excluded by the existing `test/**/*.test.ts` include pattern combined with the e2e exclude, and vitest only runs files matching the config's include. However, adding `test/eval/**` to the exclude list in `vitest.config.ts` is still good practice for clarity.
 
 ```typescript
-// vitest.config.ts
-exclude: ['test/e2e/**', 'test/eval/**']
+// vitest.eval.config.ts
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    include: ["test/eval/**/*.test.ts"],
+    testTimeout: 600_000,
+    globals: true,
+  },
+});
 ```
 
 ### Makefile Targets (dev.mk)
@@ -207,7 +241,7 @@ eval-compare:        ## Quick eval + compare against baseline (NAME=...)
 eval-full-compare:   ## Full eval + compare against baseline (NAME=...)
 ```
 
-All targets pass `EVAL_MODE` and optionally `EVAL_SAVE_BASELINE` or `EVAL_COMPARE_BASELINE` to `npx vitest run test/eval/`.
+All targets use `--config vitest.eval.config.ts` and pass `EVAL_MODE` and optionally `EVAL_SAVE_BASELINE` or `EVAL_COMPARE_BASELINE`. All must be added to the `.PHONY` declaration.
 
 ### Typical Workflow
 
