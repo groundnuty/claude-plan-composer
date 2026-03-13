@@ -188,9 +188,11 @@ function renderDetailRows(s: SessionState, nc: boolean): string {
   const log = formatBytes(s.logSize);
   const plan = formatBytes(s.planSize);
 
-  const sizeLine =
-    `${indent}log:${c(DIM, log, nc)}  plan:${c(DIM, plan, nc)}` +
-    `  dur:${c(DIM, duration, nc)}  cost:${c(DIM, cost, nc)}`;
+  const sizeLine = c(
+    DIM,
+    `${indent}log:${log}  plan:${plan}  dur:${duration}  cost:${cost}`,
+    nc,
+  );
   const toolLine = `${indent}${c(DIM, tools, nc)}`;
   const actionLine = `${indent}\u2514\u2500 ${c(DIM, s.lastAction, nc)}`;
 
@@ -232,27 +234,64 @@ function renderChildRows(children: readonly ChildState[], nc: boolean): string {
 
 // ── Stage grouping ──────────────────────────────────────────────────────────
 
-type Stage = "generate" | "evaluate" | "merge" | "verify" | "other";
+/** Derive a display stage name from the session's phaseName or name prefix. */
+function deriveStage(s: SessionState): string {
+  // Prefer the explicit phaseName from the ordinal system
+  if (s.phaseName) return s.phaseName;
+  // Fallback: infer from session name prefix (for old logs without phase events)
+  if (s.name.startsWith("plan-")) return "generating";
+  if (s.name.startsWith("eval")) return "evaluating";
+  if (s.name.startsWith("merge")) return "merging";
+  if (s.name.startsWith("verify") || s.name.startsWith("pre-mortem"))
+    return "verifying";
+  return "other";
+}
 
-/** Group sessions by pipeline stage based on name prefix. */
+// Fallback stage order for logs without phase ordinals
+const FALLBACK_STAGE_ORDER: Record<string, number> = {
+  generating: 0,
+  evaluating: 1,
+  merging: 2,
+  verifying: 3,
+  "pre-mortem": 4,
+  other: 99,
+};
+
+/** Group sessions by pipeline stage, sorted by phaseOrdinal. */
 function groupByStage(
   sessions: readonly SessionState[],
-): Map<Stage, SessionState[]> {
-  const groups = new Map<Stage, SessionState[]>();
+): Map<string, SessionState[]> {
+  // Collect entries with ordinal for sorting
+  const entries: Array<{
+    stage: string;
+    ordinal: number;
+    session: SessionState;
+  }> = [];
   for (const s of sessions) {
-    let stage: Stage;
-    if (s.name.startsWith("plan-")) stage = "generate";
-    else if (s.name.startsWith("eval")) stage = "evaluate";
-    else if (s.name.startsWith("merge")) stage = "merge";
-    else if (s.name.startsWith("verify") || s.name.startsWith("pre-mortem"))
-      stage = "verify";
-    else stage = "other";
+    entries.push({
+      stage: deriveStage(s),
+      ordinal: s.phaseOrdinal,
+      session: s,
+    });
+  }
 
+  // Sort by ordinal; fall back to well-known stage order when ordinals absent
+  entries.sort((a, b) => {
+    const aOrd =
+      a.ordinal >= 0 ? a.ordinal : (FALLBACK_STAGE_ORDER[a.stage] ?? 50);
+    const bOrd =
+      b.ordinal >= 0 ? b.ordinal : (FALLBACK_STAGE_ORDER[b.stage] ?? 50);
+    return aOrd - bOrd;
+  });
+
+  // Group preserving sorted order
+  const groups = new Map<string, SessionState[]>();
+  for (const { stage, session } of entries) {
     const existing = groups.get(stage);
     if (existing !== undefined) {
-      existing.push(s);
+      existing.push(session);
     } else {
-      groups.set(stage, [s]);
+      groups.set(stage, [session]);
     }
   }
   return groups;
@@ -285,10 +324,11 @@ function renderColumnHeaders(nc: boolean): string {
 // ── Stage colors ────────────────────────────────────────────────────────────
 
 const STAGE_COLORS: Record<string, string> = {
-  generate: CYAN,
-  evaluate: YELLOW,
-  merge: GREEN,
-  verify: RED,
+  generating: CYAN,
+  evaluating: YELLOW,
+  merging: GREEN,
+  verifying: RED,
+  "pre-mortem": RED,
   other: DIM,
 };
 
@@ -308,34 +348,37 @@ function renderTotalsFooter(
   const running = sessions.filter((s) => s.status === "running").length;
   const done = sessions.filter((s) => s.status === "done").length;
   const failed = sessions.filter((s) => s.status === "failed").length;
-  const genCount = sessions.filter((s) => s.name.startsWith("plan-")).length;
-  const genDone = sessions.filter(
-    (s) => s.name.startsWith("plan-") && s.status === "done",
-  ).length;
-  const genRunning = sessions.filter(
-    (s) => s.name.startsWith("plan-") && s.status === "running",
-  ).length;
+  const genSessions = sessions.filter((s) => deriveStage(s) === "generating");
+  const genCount = genSessions.length;
+  const genDone = genSessions.filter((s) => s.status === "done").length;
+  const genRunning = genSessions.filter((s) => s.status === "running").length;
 
-  // Status line
-  const stagesDone = [
-    sessions.some((s) => s.name.startsWith("plan-") && s.status === "done"),
-    sessions.some((s) => s.name.startsWith("eval") && s.status === "done"),
-    sessions.some((s) => s.name.startsWith("merge") && s.status === "done"),
-    sessions.some(
-      (s) =>
-        (s.name.startsWith("verify") || s.name.startsWith("pre-mortem")) &&
-        s.status === "done",
-    ),
-  ].filter(Boolean).length;
+  // Status line — count distinct phases that have at least one done session
+  const donePhases = new Set<string>();
+  for (const s of sessions) {
+    if (s.status === "done") {
+      donePhases.add(deriveStage(s));
+    }
+  }
+  const stagesDone = donePhases.size;
+
+  // Count total distinct phases
+  const allPhases = new Set<string>();
+  for (const s of sessions) {
+    allPhases.add(deriveStage(s));
+  }
+  const totalPhases = allPhases.size;
 
   const statusLabel =
     running > 0
       ? c(CYAN, "running", nc)
-      : stagesDone === 4
+      : stagesDone === totalPhases
         ? c(GREEN, "complete", nc)
         : c(YELLOW, "incomplete", nc);
 
-  lines.push(`  Status: ${statusLabel} — ${stagesDone}/4 stages done`);
+  lines.push(
+    `  Status: ${statusLabel} — ${stagesDone}/${totalPhases} stages done`,
+  );
 
   // Plans breakdown
   if (genCount > 0) {
@@ -416,9 +459,8 @@ export function renderTable(
 
   // Header
   const project = projectName(state.configPath);
-  const elapsed = formatDuration(
-    Date.now() - new Date(state.startedAt).getTime(),
-  );
+  const startMs = state.startedAt ? new Date(state.startedAt).getTime() : 0;
+  const elapsed = startMs > 0 ? formatDuration(Date.now() - startMs) : "—";
   lines.push(
     c(BOLD, `cpc monitor — ${project}`, nc) +
       `  pid:${state.pid}  cmd:${state.command}  elapsed:${elapsed}`,

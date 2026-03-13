@@ -39,7 +39,11 @@ export async function verify(
 
   const prompt = buildVerifyPrompt(mergeResult.content, sourcePlans);
 
-  const logger = new NdjsonLogger(`${planSet.runDir}/verify-session.ndjson`);
+  const phase = options.onStatusMessage?.currentPhase?.();
+  const logger = new NdjsonLogger(
+    `${planSet.runDir}/verify-session.ndjson`,
+    phase,
+  );
 
   const abortController = new AbortController();
   if (options.signal) {

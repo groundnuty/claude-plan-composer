@@ -114,7 +114,8 @@ export class SubagentDebateStrategy implements MergeStrategy {
       evalResult,
     );
     const logPath = mergePlanPath.replace(/\.md$/, ".log");
-    const logger = new NdjsonLogger(logPath);
+    const phase = onStatusMessage?.currentPhase?.();
+    const logger = new NdjsonLogger(logPath, phase);
     const messages: unknown[] = [];
     const progress = new SessionProgress("merge:subagent-debate");
 

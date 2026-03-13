@@ -1,12 +1,27 @@
 import { createWriteStream, type WriteStream } from "node:fs";
 
+export interface PhaseEvent {
+  readonly name: string;
+  readonly ordinal: number;
+}
+
 /** NDJSON logger that handles backpressure for SDK message streams */
 export class NdjsonLogger {
   private readonly stream: WriteStream;
   private _bytesWritten = 0;
 
-  constructor(logPath: string) {
+  constructor(logPath: string, phase?: PhaseEvent) {
     this.stream = createWriteStream(logPath);
+    if (phase) {
+      const line =
+        JSON.stringify({
+          type: "phase",
+          name: phase.name,
+          ordinal: phase.ordinal,
+        }) + "\n";
+      this._bytesWritten += Buffer.byteLength(line, "utf8");
+      this.stream.write(line);
+    }
   }
 
   /** Write a message as an NDJSON line, awaiting drain if needed */

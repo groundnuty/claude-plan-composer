@@ -32,7 +32,11 @@ export async function evaluate(
   const model = options.model ?? DEFAULT_EVAL_MODEL;
   const prompt = buildEvalPrompt(planSet.plans, config);
 
-  const logger = new NdjsonLogger(`${planSet.runDir}/eval-session.ndjson`);
+  const phase = options.onStatusMessage?.currentPhase?.();
+  const logger = new NdjsonLogger(
+    `${planSet.runDir}/eval-session.ndjson`,
+    phase,
+  );
 
   const abortController = new AbortController();
   if (options.signal) {

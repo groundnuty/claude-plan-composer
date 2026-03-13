@@ -96,7 +96,8 @@ async function runVariantSession(
   onStatusMessage?: OnStatusMessage,
 ): Promise<Plan> {
   const logPath = vp.planPath.replace(/\.md$/, ".log");
-  const logger = new NdjsonLogger(logPath);
+  const phase = onStatusMessage?.currentPhase?.();
+  const logger = new NdjsonLogger(logPath, phase);
 
   const abortController = new AbortController();
 

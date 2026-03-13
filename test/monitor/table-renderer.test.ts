@@ -5,6 +5,8 @@ import type { PipelineState, SessionState } from "../../src/monitor/types.js";
 function makeSession(overrides: Partial<SessionState> = {}): SessionState {
   return {
     name: "plan-01-alpha",
+    phaseName: "generating",
+    phaseOrdinal: 0,
     status: "done",
     sessionId: "sess-abc1",
     turns: 44,

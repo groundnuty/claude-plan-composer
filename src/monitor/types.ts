@@ -1,7 +1,16 @@
 // src/monitor/types.ts
 
+export interface PhaseInfo {
+  readonly name: string;
+  readonly ordinal: number;
+}
+
 /** Callback signature for status message forwarding */
-export type OnStatusMessage = (sessionName: string, msg: unknown) => void;
+export interface OnStatusMessage {
+  (sessionName: string, msg: unknown): void;
+  /** Returns the current pipeline phase (name + ordinal). */
+  currentPhase?: () => PhaseInfo;
+}
 
 export interface AgentCount {
   readonly running: number;
@@ -26,6 +35,8 @@ export interface ChildState {
 
 export interface SessionState {
   readonly name: string;
+  readonly phaseName: string;
+  readonly phaseOrdinal: number;
   readonly status: "pending" | "running" | "done" | "failed";
   readonly sessionId: string;
   readonly turns: number;

@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { StatusCollector } from "../../src/monitor/status-collector.js";
 
 // Helper: build a mock SDK assistant message with tool_use blocks
-function mockAssistantWithTools(tools: Array<{ name: string; input?: Record<string, unknown> }>): unknown {
+function mockAssistantWithTools(
+  tools: Array<{ name: string; input?: Record<string, unknown> }>,
+): unknown {
   return {
     type: "assistant",
     message: {
@@ -78,12 +80,15 @@ describe("StatusCollector", () => {
   });
 
   describe("session registration", () => {
-    it("registers a new session as running", () => {
+    it("registers a new session as running with current phase", () => {
+      collector.setStage("generating");
       collector.registerSession("plan-01-alpha");
       const state = collector.getState();
       expect(state.sessions).toHaveLength(1);
       expect(state.sessions[0]!.name).toBe("plan-01-alpha");
       expect(state.sessions[0]!.status).toBe("running");
+      expect(state.sessions[0]!.phaseName).toBe("generating");
+      expect(state.sessions[0]!.phaseOrdinal).toBe(0);
     });
 
     it("registers multiple sessions", () => {
@@ -97,10 +102,13 @@ describe("StatusCollector", () => {
   describe("onMessage — assistant with tools", () => {
     it("increments turns and tool counts", () => {
       collector.registerSession("s1");
-      collector.onMessage("s1", mockAssistantWithTools([
-        { name: "Read", input: { file_path: "/src/foo.ts" } },
-        { name: "Glob", input: { pattern: "**/*.ts" } },
-      ]));
+      collector.onMessage(
+        "s1",
+        mockAssistantWithTools([
+          { name: "Read", input: { file_path: "/src/foo.ts" } },
+          { name: "Glob", input: { pattern: "**/*.ts" } },
+        ]),
+      );
 
       const session = collector.getState().sessions[0]!;
       expect(session.turns).toBe(1);
@@ -112,7 +120,10 @@ describe("StatusCollector", () => {
     it("accumulates tool counts across messages", () => {
       collector.registerSession("s1");
       collector.onMessage("s1", mockAssistantWithTools([{ name: "Read" }]));
-      collector.onMessage("s1", mockAssistantWithTools([{ name: "Read" }, { name: "Write" }]));
+      collector.onMessage(
+        "s1",
+        mockAssistantWithTools([{ name: "Read" }, { name: "Write" }]),
+      );
 
       const session = collector.getState().sessions[0]!;
       expect(session.turns).toBe(2);
@@ -210,15 +221,20 @@ describe("StatusCollector", () => {
   describe("onMessage — TeamCreate/SendMessage (agent-teams children)", () => {
     it("adds team members on TeamCreate tool_use", () => {
       collector.registerSession("s1");
-      collector.onMessage("s1", mockAssistantWithTools([{
-        name: "TeamCreate",
-        input: {
-          members: [
-            { name: "reliability-advocate" },
-            { name: "security-advocate" },
-          ],
-        },
-      }]));
+      collector.onMessage(
+        "s1",
+        mockAssistantWithTools([
+          {
+            name: "TeamCreate",
+            input: {
+              members: [
+                { name: "reliability-advocate" },
+                { name: "security-advocate" },
+              ],
+            },
+          },
+        ]),
+      );
 
       const session = collector.getState().sessions[0]!;
       expect(session.children).toHaveLength(2);
@@ -229,14 +245,24 @@ describe("StatusCollector", () => {
 
     it("tracks SendMessage activity on team members", () => {
       collector.registerSession("s1");
-      collector.onMessage("s1", mockAssistantWithTools([{
-        name: "TeamCreate",
-        input: { members: [{ name: "advocate-1" }] },
-      }]));
-      collector.onMessage("s1", mockAssistantWithTools([{
-        name: "SendMessage",
-        input: { to: "advocate-1", message: "Present your case" },
-      }]));
+      collector.onMessage(
+        "s1",
+        mockAssistantWithTools([
+          {
+            name: "TeamCreate",
+            input: { members: [{ name: "advocate-1" }] },
+          },
+        ]),
+      );
+      collector.onMessage(
+        "s1",
+        mockAssistantWithTools([
+          {
+            name: "SendMessage",
+            input: { to: "advocate-1", message: "Present your case" },
+          },
+        ]),
+      );
 
       const child = collector.getState().sessions[0]!.children[0]!;
       expect(child.turns).toBe(1);
@@ -253,6 +279,23 @@ describe("StatusCollector", () => {
       collector.setStage("generating");
       expect(collector.getState().stage).toBe("generating");
     });
+
+    it("increments phase ordinal on each setStage call", () => {
+      collector.setStage("generating");
+      collector.registerSession("s1");
+      collector.setStage("evaluating");
+      collector.registerSession("s2");
+      collector.setStage("merging");
+      collector.registerSession("s3");
+
+      const sessions = collector.getState().sessions;
+      expect(sessions[0]!.phaseName).toBe("generating");
+      expect(sessions[0]!.phaseOrdinal).toBe(0);
+      expect(sessions[1]!.phaseName).toBe("evaluating");
+      expect(sessions[1]!.phaseOrdinal).toBe(1);
+      expect(sessions[2]!.phaseName).toBe("merging");
+      expect(sessions[2]!.phaseOrdinal).toBe(2);
+    });
   });
 
   describe("completeSession", () => {
@@ -266,6 +309,17 @@ describe("StatusCollector", () => {
       collector.registerSession("s1");
       collector.completeSession("s1", "failed");
       expect(collector.getState().sessions[0]!.status).toBe("failed");
+    });
+  });
+
+  describe("createCallback", () => {
+    it("exposes currentPhase with up-to-date stage info", () => {
+      const cb = collector.createCallback();
+      collector.setStage("generating");
+      expect(cb.currentPhase?.()).toEqual({ name: "generating", ordinal: 0 });
+
+      collector.setStage("merging");
+      expect(cb.currentPhase?.()).toEqual({ name: "merging", ordinal: 1 });
     });
   });
 

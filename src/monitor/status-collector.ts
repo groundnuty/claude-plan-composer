@@ -36,6 +36,8 @@ interface MutableChild {
 
 interface MutableSession {
   name: string;
+  phaseName: string;
+  phaseOrdinal: number;
   status: "pending" | "running" | "done" | "failed";
   sessionId: string;
   startedAt: number;
@@ -72,6 +74,7 @@ export class StatusCollector {
   private readonly configPath: string;
   private outputDir: string;
   private stage = "idle";
+  private phaseOrdinal = -1;
   private readonly sessions = new Map<string, MutableSession>();
 
   constructor(opts: InitOptions) {
@@ -85,6 +88,8 @@ export class StatusCollector {
   registerSession(name: string): void {
     this.sessions.set(name, {
       name,
+      phaseName: this.stage,
+      phaseOrdinal: this.phaseOrdinal,
       status: "running",
       sessionId: "",
       startedAt: Date.now(),
@@ -110,6 +115,7 @@ export class StatusCollector {
 
   setStage(stage: string): void {
     this.stage = stage;
+    this.phaseOrdinal++;
   }
 
   setOutputDir(dir: string): void {
@@ -165,9 +171,14 @@ export class StatusCollector {
   }
 
   createCallback(): OnStatusMessage {
-    return (sessionName: string, msg: unknown) => {
+    const cb: OnStatusMessage = (sessionName: string, msg: unknown) => {
       this.onMessage(sessionName, msg);
     };
+    cb.currentPhase = () => ({
+      name: this.stage,
+      ordinal: this.phaseOrdinal,
+    });
+    return cb;
   }
 
   getState(): PipelineState {
@@ -206,6 +217,8 @@ export class StatusCollector {
 
       sessions.push({
         name: s.name,
+        phaseName: s.phaseName,
+        phaseOrdinal: s.phaseOrdinal,
         status: s.status,
         sessionId: s.sessionId,
         turns: s.turns,

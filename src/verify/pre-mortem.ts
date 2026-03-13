@@ -217,7 +217,8 @@ export async function runPreMortem(
   const model = options.model ?? DEFAULT_PRE_MORTEM_MODEL;
   const prompt = buildPreMortemPrompt(mergedPlan);
 
-  const logger = new NdjsonLogger(`${runDir}/pre-mortem-session.ndjson`);
+  const phase = options.onStatusMessage?.currentPhase?.();
+  const logger = new NdjsonLogger(`${runDir}/pre-mortem-session.ndjson`, phase);
 
   const abortController = new AbortController();
   if (options.signal) {

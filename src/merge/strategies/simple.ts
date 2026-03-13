@@ -23,7 +23,8 @@ export class SimpleStrategy implements MergeStrategy {
   ): Promise<MergeResult> {
     const prompt = buildMergePrompt(plans, config, mergePlanPath, evalResult);
     const logPath = mergePlanPath.replace(/\.md$/, ".log");
-    const logger = new NdjsonLogger(logPath);
+    const phase = onStatusMessage?.currentPhase?.();
+    const logger = new NdjsonLogger(logPath, phase);
 
     const messages: unknown[] = [];
     const progress = new SessionProgress("merge:simple");

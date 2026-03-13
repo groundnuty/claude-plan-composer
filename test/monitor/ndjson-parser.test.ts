@@ -15,9 +15,27 @@ describe("parseNdjsonLog", () => {
   it("counts turns from assistant messages", async () => {
     tmpFile = path.join(TMPDIR, `ndjson-test-${Date.now()}.log`);
     const lines = [
-      JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "hi" }], usage: { input_tokens: 100, output_tokens: 50 } } }),
-      JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "bye" }], usage: { input_tokens: 200, output_tokens: 60 } } }),
-      JSON.stringify({ type: "result", subtype: "success", num_turns: 2, total_cost_usd: 0.05, session_id: "s1" }),
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [{ type: "text", text: "hi" }],
+          usage: { input_tokens: 100, output_tokens: 50 },
+        },
+      }),
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [{ type: "text", text: "bye" }],
+          usage: { input_tokens: 200, output_tokens: 60 },
+        },
+      }),
+      JSON.stringify({
+        type: "result",
+        subtype: "success",
+        num_turns: 2,
+        total_cost_usd: 0.05,
+        session_id: "s1",
+      }),
     ];
     await fs.writeFile(tmpFile, lines.join("\n") + "\n");
 
@@ -61,7 +79,13 @@ describe("parseNdjsonLog", () => {
       JSON.stringify({
         type: "assistant",
         message: {
-          content: [{ type: "tool_use", name: "Write", input: { file_path: "/out/plan.md" } }],
+          content: [
+            {
+              type: "tool_use",
+              name: "Write",
+              input: { file_path: "/out/plan.md" },
+            },
+          ],
           usage: { input_tokens: 100, output_tokens: 50 },
         },
       }),
@@ -91,5 +115,24 @@ describe("parseNdjsonLog", () => {
     const result = await parseNdjsonLog(tmpFile);
     expect(result.turns).toBe(0);
     expect(result.toolCalls).toBe(0);
+  });
+
+  it("parses synthetic phase events", async () => {
+    tmpFile = path.join(TMPDIR, `ndjson-test-${Date.now()}.log`);
+    const lines = [
+      JSON.stringify({ type: "phase", name: "generating", ordinal: 0 }),
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [{ type: "text", text: "hi" }],
+          usage: { input_tokens: 100, output_tokens: 50 },
+        },
+      }),
+    ];
+    await fs.writeFile(tmpFile, lines.join("\n") + "\n");
+
+    const result = await parseNdjsonLog(tmpFile);
+    expect(result.phaseName).toBe("generating");
+    expect(result.phaseOrdinal).toBe(0);
   });
 });

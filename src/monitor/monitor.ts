@@ -94,6 +94,8 @@ async function buildPostHocState(dir: string): Promise<PipelineState> {
 
     sessions.push({
       name,
+      phaseName: summary.phaseName,
+      phaseOrdinal: summary.phaseOrdinal,
       status: summary.sessionId ? "done" : "running",
       sessionId: summary.sessionId,
       turns: summary.turns,

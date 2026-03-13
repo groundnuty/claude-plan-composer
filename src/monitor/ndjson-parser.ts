@@ -14,6 +14,8 @@ export interface NdjsonSummary {
   readonly durationMs: number;
   readonly sessionId: string;
   readonly lastAction: string;
+  readonly phaseName: string;
+  readonly phaseOrdinal: number;
 }
 
 export async function parseNdjsonLog(filePath: string): Promise<NdjsonSummary> {
@@ -37,6 +39,8 @@ export async function parseNdjsonLog(filePath: string): Promise<NdjsonSummary> {
   let durationMs = 0;
   let sessionId = "";
   let lastAction = "";
+  let phaseName = "";
+  let phaseOrdinal = -1;
 
   for (const line of content.split("\n")) {
     if (!line.trim()) continue;
@@ -79,6 +83,9 @@ export async function parseNdjsonLog(filePath: string): Promise<NdjsonSummary> {
       sessionId = (msg.session_id as string) ?? "";
     } else if (msg.type === "system" && msg.subtype === "compact_boundary") {
       compactions++;
+    } else if (msg.type === "phase") {
+      phaseName = (msg.name as string) ?? "";
+      phaseOrdinal = (msg.ordinal as number) ?? -1;
     }
   }
 
@@ -96,6 +103,8 @@ export async function parseNdjsonLog(filePath: string): Promise<NdjsonSummary> {
     durationMs,
     sessionId,
     lastAction,
+    phaseName,
+    phaseOrdinal,
   };
 }
 
@@ -114,5 +123,7 @@ function emptySummary(): NdjsonSummary {
     durationMs: 0,
     sessionId: "",
     lastAction: "",
+    phaseName: "",
+    phaseOrdinal: -1,
   };
 }
