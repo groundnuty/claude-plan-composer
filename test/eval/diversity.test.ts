@@ -10,7 +10,7 @@ import {
   hasClaudeAuth,
   makeTempOutputDir,
 } from "./helpers/runner.js";
-import { extractDimensionNames, computeWordPairwiseJaccard } from "./helpers/metrics.js";
+import { extractDimensionNames, computeWordPairwiseJaccard, computeShannonEntropy } from "./helpers/metrics.js";
 import {
   saveBaseline,
   compareBaseline,
@@ -90,6 +90,18 @@ suite("metamorphic: lens diversity", () => {
         `[diversity] Delta: ${(diverseWordDistance - homoWordDistance).toFixed(4)}`,
       );
 
+      // Compute Shannon entropy (MIMIC-style, n=1,2,3)
+      const diverseEntropy = computeShannonEntropy(
+        diversePlanSet.plans.map((p) => p.content),
+      );
+      const homoEntropy = computeShannonEntropy(
+        homoPlanSet.plans.map((p) => p.content),
+      );
+
+      console.log(
+        `[diversity] Shannon entropy — diverse: ${diverseEntropy.mean.toFixed(4)}, homo: ${homoEntropy.mean.toFixed(4)}`,
+      );
+
       // Metamorphic assertion: homogeneous lenses produce higher word overlap than diverse.
       // With functioning guidance, diverse plans use different vocabulary (architecture vs
       // risk vs testing) while homogeneous plans share more common terms.
@@ -136,6 +148,7 @@ suite("metamorphic: lens diversity", () => {
             jaccardDistance: diverseWordDistance,
             jaccardPairs: diverseHeadingJaccard.pairs,
             dimensionCoverage: dimCoverage,
+            shannonEntropy: diverseEntropy,
             configPaths: {
               generate: `${mode === "quick" ? "test/fixtures/eval" : "eval/configs/full"}/config.yaml`,
               merge: `${mode === "quick" ? "test/fixtures/eval" : "eval/configs/full"}/merge-config.yaml`,
@@ -155,6 +168,7 @@ suite("metamorphic: lens diversity", () => {
             jaccardDistance: diverseWordDistance,
             dimensionCoverage: dimCoverage,
             model: genConfig.model,
+            shannonEntropy: diverseEntropy.mean,
           });
           console.log(`\n${table}`);
         }
