@@ -47,15 +47,6 @@ process.on("SIGTERM", () => controller.abort());
 const coerceInt = (v: string): number => parseInt(v, 10);
 const coerceFloat = (v: string): number => parseFloat(v);
 
-/** Read a file and return { name, content }. Name = filename without extension. */
-async function readPromptFile(
-  filePath: string,
-): Promise<{ name: string; content: string }> {
-  const content = await fs.readFile(filePath, "utf-8");
-  const name = path.basename(filePath, path.extname(filePath));
-  return { name, content };
-}
-
 /** Print a generate summary to stderr. */
 function printGenerateSummary(
   runDir: string,
@@ -121,15 +112,9 @@ const program = new Command()
 
 program
   .command("generate")
-  .description("Generate plans from prompt file(s)")
-  .argument("<prompt-file>", "Primary prompt file")
-  .argument("[extra-files...]", "Additional prompt files (multi-file mode)")
+  .description("Generate plans from config")
   .option("--config <file>", "Config file path")
-  .option(
-    "--multi",
-    "Multi-file mode: treat extra positional args as variant files",
-  )
-  .option("--context <file>", "Shared context file (multi-file mode)")
+  .option("--prompt <file>", "Override base prompt file path")
   .option("--debug [variant]", "Debug mode: sonnet, 20 turns, single variant")
   .option("--dry-run", "Show resolved config and exit")
   .option("--auto-lenses", "Generate task-specific variants via LLM")
@@ -138,7 +123,7 @@ program
   .option("--max-turns <n>", "Override max turns", coerceInt)
   .option("--timeout <ms>", "Override timeout in milliseconds", coerceInt)
   .option("--budget <usd>", "Override budget cap in USD", coerceFloat)
-  .action(async (promptFile: string, extraFiles: string[], opts) => {
+  .action(async (opts) => {
     try {
       const overrides: Record<string, unknown> = {};
       if (opts.model !== undefined) overrides.model = opts.model;
@@ -147,6 +132,7 @@ program
       if (opts.budget !== undefined) overrides.budgetUsd = opts.budget;
       if (opts.autoLenses) overrides.autoLenses = true;
       if (opts.sequentialDiversity) overrides.sequentialDiversity = true;
+      if (opts.prompt !== undefined) overrides.prompt = opts.prompt;
 
       const config = await resolveGenerateConfig({
         cliConfigPath: opts.config,
@@ -181,25 +167,11 @@ program
       collector.setStage("generating");
 
       try {
-        // Build generate options
-        const generateOpts: GenerateOptions = opts.multi
-          ? {
-              promptFiles: await Promise.all(
-                [promptFile, ...extraFiles].map(readPromptFile),
-              ),
-              context: opts.context
-                ? await fs.readFile(opts.context, "utf-8")
-                : undefined,
-              debug: opts.debug ?? false,
-              signal: controller.signal,
-              onStatusMessage,
-            }
-          : {
-              prompt: (await readPromptFile(promptFile)).content,
-              debug: opts.debug ?? false,
-              signal: controller.signal,
-              onStatusMessage,
-            };
+        const generateOpts: GenerateOptions = {
+          debug: opts.debug ?? false,
+          signal: controller.signal,
+          onStatusMessage,
+        };
 
         const result = await generate(config, generateOpts);
         await writePlanSet(result, result.runDir);
@@ -498,15 +470,9 @@ program
 program
   .command("run")
   .description("Generate plans then merge (full pipeline)")
-  .argument("<prompt-file>", "Primary prompt file")
-  .argument("[extra-files...]", "Additional prompt files (multi-file mode)")
   // generate flags
   .option("--config <file>", "Generate config file path")
-  .option(
-    "--multi",
-    "Multi-file mode: treat extra positional args as variant files",
-  )
-  .option("--context <file>", "Shared context file (multi-file mode)")
+  .option("--prompt <file>", "Override base prompt file path")
   .option("--debug [variant]", "Debug mode: sonnet, 20 turns, single variant")
   .option("--dry-run", "Show resolved configs and exit")
   .option("--auto-lenses", "Generate task-specific variants via LLM")
@@ -527,7 +493,7 @@ program
   .option("--verify", "Run post-merge verification")
   .option("--verify-model <name>", "Model for verification (default: sonnet)")
   .option("--pre-mortem", "Run pre-mortem failure analysis after verification")
-  .action(async (promptFile: string, extraFiles: string[], opts) => {
+  .action(async (opts) => {
     try {
       // Resolve generate config
       const genOverrides: Record<string, unknown> = {};
@@ -537,6 +503,7 @@ program
       if (opts.budget !== undefined) genOverrides.budgetUsd = opts.budget;
       if (opts.autoLenses) genOverrides.autoLenses = true;
       if (opts.sequentialDiversity) genOverrides.sequentialDiversity = true;
+      if (opts.prompt !== undefined) genOverrides.prompt = opts.prompt;
 
       const genConfig = await resolveGenerateConfig({
         cliConfigPath: opts.config,
@@ -586,24 +553,11 @@ program
       try {
         // 1. Generate
         collector.setStage("generating");
-        const generateOpts: GenerateOptions = opts.multi
-          ? {
-              promptFiles: await Promise.all(
-                [promptFile, ...extraFiles].map(readPromptFile),
-              ),
-              context: opts.context
-                ? await fs.readFile(opts.context, "utf-8")
-                : undefined,
-              debug: opts.debug ?? false,
-              signal: controller.signal,
-              onStatusMessage,
-            }
-          : {
-              prompt: (await readPromptFile(promptFile)).content,
-              debug: opts.debug ?? false,
-              signal: controller.signal,
-              onStatusMessage,
-            };
+        const generateOpts: GenerateOptions = {
+          debug: opts.debug ?? false,
+          signal: controller.signal,
+          onStatusMessage,
+        };
 
         const planSet = await generate(genConfig, generateOpts);
         await writePlanSet(planSet, planSet.runDir);
