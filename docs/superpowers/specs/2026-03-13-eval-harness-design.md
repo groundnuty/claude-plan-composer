@@ -215,7 +215,7 @@ Not automatic. Opt-in via environment variables:
 
 ### Vitest Config
 
-A dedicated `vitest.eval.config.ts` (following the existing `vitest.e2e.config.ts` pattern) includes only `test/eval/**/*.test.ts` and sets appropriate `testTimeout`. The default `vitest.config.ts` does NOT need modification — `test/eval/` is already excluded by the existing `test/**/*.test.ts` include pattern combined with the e2e exclude, and vitest only runs files matching the config's include. However, adding `test/eval/**` to the exclude list in `vitest.config.ts` is still good practice for clarity.
+A dedicated `vitest.eval.config.ts` (following the existing `vitest.e2e.config.ts` pattern) includes only `test/eval/**/*.test.ts` and sets appropriate `testTimeout`. The default `vitest.config.ts` MUST also add `"test/eval/**"` to its `exclude` array — the existing include pattern `test/**/*.test.ts` matches eval test files, so without the exclude, `npx vitest run` would pick them up and fail (no API credentials, long timeouts).
 
 ```typescript
 // vitest.eval.config.ts
