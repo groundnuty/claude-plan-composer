@@ -99,9 +99,9 @@ export function formatComparisonTable(
     const cFound = current.dimensionCoverage[dim] ?? false;
     const bStr = bFound ? "FOUND" : "MISSING";
     const cStr = cFound ? "FOUND" : "MISSING";
-    let delta = "=";
-    if (bFound && !cFound) delta = "↓REGRESSION";
-    else if (!bFound && cFound) delta = "↑IMPROVED";
+    const delta = bFound && !cFound ? "↓REGRESSION"
+      : !bFound && cFound ? "↑IMPROVED"
+      : "=";
     lines.push(padRow(`Dimension: ${dim}`, bStr, cStr, delta));
   }
 
