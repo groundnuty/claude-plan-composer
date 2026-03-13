@@ -81,6 +81,7 @@ function normalizeVariants(
           name,
           guidance: obj.guidance ?? "",
           ...(obj.model ? { model: obj.model } : {}),
+          ...(obj.promptFile ? { promptFile: obj.promptFile } : {}),
         };
       }
       return { name, guidance: String(value) };
