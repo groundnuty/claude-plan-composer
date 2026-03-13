@@ -154,7 +154,7 @@ exclusively in `generated-plans/multi-*/`, with zero overlap.
 
 1. If `auto_lenses: true` and any variant has `prompt_file` → `IncompatibleFlagsError`
 2. If no `prompt` in resolved config and some variants lack `prompt_file` →
-   `ConfigValidationError` ("base prompt required when variants lack prompt_file")
+   `MissingBasePromptError` (dedicated error class for clear diagnostics)
 3. `--prompt` flag overrides config `prompt` (base prompt only, not per-variant files)
 4. `context` is always optional
 5. `sequential_diversity` is incompatible with `prompt_file` variants (same reasoning
