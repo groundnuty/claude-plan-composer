@@ -1,0 +1,245 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`resolveGenerateConfig snapshots > fixture YAML + CLI overrides 1`] = `
+{
+  "additionalDirs": [],
+  "autoLenses": false,
+  "lensCount": 4,
+  "lensModel": "haiku",
+  "lensTimeoutMs": 120000,
+  "maxTurns": 5,
+  "minOutputBytes": 500,
+  "model": "haiku",
+  "prompt": "prompts/task.md",
+  "sequentialDiversity": false,
+  "sessionSettings": {},
+  "settingSources": [],
+  "staggerMs": 0,
+  "strictMcp": true,
+  "timeoutMs": 600000,
+  "tools": [
+    "Read",
+    "Glob",
+    "Bash",
+    "Write",
+    "WebFetch",
+    "WebSearch",
+  ],
+  "variants": [
+    {
+      "guidance": "",
+      "name": "baseline",
+    },
+    {
+      "guidance": "Prioritize minimalism.",
+      "name": "simplicity",
+    },
+  ],
+  "workDir": "",
+}
+`;
+
+exports[`resolveGenerateConfig snapshots > fixture YAML + env overrides 1`] = `
+{
+  "additionalDirs": [],
+  "autoLenses": false,
+  "lensCount": 4,
+  "lensModel": "haiku",
+  "lensTimeoutMs": 120000,
+  "maxTurns": 20,
+  "minOutputBytes": 500,
+  "model": "haiku",
+  "prompt": "prompts/task.md",
+  "sequentialDiversity": false,
+  "sessionSettings": {},
+  "settingSources": [],
+  "staggerMs": 0,
+  "strictMcp": true,
+  "timeoutMs": 600000,
+  "tools": [
+    "Read",
+    "Glob",
+    "Bash",
+    "Write",
+    "WebFetch",
+    "WebSearch",
+  ],
+  "variants": [
+    {
+      "guidance": "",
+      "name": "baseline",
+    },
+    {
+      "guidance": "Prioritize minimalism.",
+      "name": "simplicity",
+    },
+  ],
+  "workDir": "",
+}
+`;
+
+exports[`resolveGenerateConfig snapshots > fixture YAML only 1`] = `
+{
+  "additionalDirs": [],
+  "autoLenses": false,
+  "lensCount": 4,
+  "lensModel": "haiku",
+  "lensTimeoutMs": 120000,
+  "maxTurns": 20,
+  "minOutputBytes": 500,
+  "model": "sonnet",
+  "prompt": "prompts/task.md",
+  "sequentialDiversity": false,
+  "sessionSettings": {},
+  "settingSources": [],
+  "staggerMs": 0,
+  "strictMcp": true,
+  "timeoutMs": 600000,
+  "tools": [
+    "Read",
+    "Glob",
+    "Bash",
+    "Write",
+    "WebFetch",
+    "WebSearch",
+  ],
+  "variants": [
+    {
+      "guidance": "",
+      "name": "baseline",
+    },
+    {
+      "guidance": "Prioritize minimalism.",
+      "name": "simplicity",
+    },
+  ],
+  "workDir": "",
+}
+`;
+
+exports[`resolveGenerateConfig snapshots > per-variant prompt_file YAML 1`] = `
+{
+  "additionalDirs": [],
+  "autoLenses": false,
+  "lensCount": 4,
+  "lensModel": "haiku",
+  "lensTimeoutMs": 120000,
+  "maxTurns": 20,
+  "minOutputBytes": 500,
+  "model": "sonnet",
+  "sequentialDiversity": false,
+  "sessionSettings": {},
+  "settingSources": [],
+  "staggerMs": 0,
+  "strictMcp": true,
+  "timeoutMs": 600000,
+  "tools": [
+    "Read",
+    "Glob",
+    "Bash",
+    "Write",
+    "WebFetch",
+    "WebSearch",
+  ],
+  "variants": [
+    {
+      "guidance": "Focus on security",
+      "name": "security",
+      "promptFile": "prompts/alt.md",
+    },
+    {
+      "guidance": "",
+      "name": "performance",
+      "promptFile": "prompts/alt.md",
+    },
+  ],
+  "workDir": "",
+}
+`;
+
+exports[`resolveMergeConfig snapshots > fixture YAML + CLI override 1`] = `
+{
+  "advocateInstructions": "Argue for your plan's approach. Challenge others where your plan is stronger. Identify at least 2 weaknesses in your OWN plan. Identify at least 2 strengths in a COMPETING plan.",
+  "comparisonMethod": "holistic",
+  "constitution": [
+    "Every trade-off must be acknowledged",
+    "No section should be purely aspirational",
+  ],
+  "dimensions": [
+    "Approach and strategy",
+    "Technical depth",
+  ],
+  "evalConsensus": "median",
+  "evalPasses": 1,
+  "evalScoring": "binary",
+  "maxTurns": 15,
+  "model": "sonnet",
+  "outputGoal": "The merged plan must be standalone — readable without the source plans.",
+  "outputTitle": "Merged Plan",
+  "projectDescription": "test project",
+  "role": "an expert analyst",
+  "settingSources": [],
+  "strategy": "subagent-debate",
+  "strictMcp": true,
+  "timeoutMs": 3600000,
+  "workDir": "",
+}
+`;
+
+exports[`resolveMergeConfig snapshots > fixture YAML + env override 1`] = `
+{
+  "advocateInstructions": "Argue for your plan's approach. Challenge others where your plan is stronger. Identify at least 2 weaknesses in your OWN plan. Identify at least 2 strengths in a COMPETING plan.",
+  "comparisonMethod": "holistic",
+  "constitution": [
+    "Every trade-off must be acknowledged",
+    "No section should be purely aspirational",
+  ],
+  "dimensions": [
+    "Approach and strategy",
+    "Technical depth",
+  ],
+  "evalConsensus": "median",
+  "evalPasses": 1,
+  "evalScoring": "binary",
+  "maxTurns": 15,
+  "model": "sonnet",
+  "outputGoal": "The merged plan must be standalone — readable without the source plans.",
+  "outputTitle": "Merged Plan",
+  "projectDescription": "test project",
+  "role": "an expert analyst",
+  "settingSources": [],
+  "strategy": "agent-teams",
+  "strictMcp": true,
+  "timeoutMs": 3600000,
+  "workDir": "",
+}
+`;
+
+exports[`resolveMergeConfig snapshots > fixture YAML only 1`] = `
+{
+  "advocateInstructions": "Argue for your plan's approach. Challenge others where your plan is stronger. Identify at least 2 weaknesses in your OWN plan. Identify at least 2 strengths in a COMPETING plan.",
+  "comparisonMethod": "holistic",
+  "constitution": [
+    "Every trade-off must be acknowledged",
+    "No section should be purely aspirational",
+  ],
+  "dimensions": [
+    "Approach and strategy",
+    "Technical depth",
+  ],
+  "evalConsensus": "median",
+  "evalPasses": 1,
+  "evalScoring": "binary",
+  "maxTurns": 15,
+  "model": "sonnet",
+  "outputGoal": "The merged plan must be standalone — readable without the source plans.",
+  "outputTitle": "Merged Plan",
+  "projectDescription": "test project",
+  "role": "an expert analyst",
+  "settingSources": [],
+  "strategy": "simple",
+  "strictMcp": true,
+  "timeoutMs": 3600000,
+  "workDir": "",
+}
+`;
