@@ -5,3 +5,4 @@ generated-plans/
 .env
 .env.local
 coverage/
+.worktrees/
