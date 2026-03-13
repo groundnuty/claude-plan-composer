@@ -1,59 +1,14 @@
 import { buildEvalPrompt } from "../../src/evaluate/prompt-builder.js";
-import type { Plan } from "../../src/types/plan.js";
-import type { MergeConfig } from "../../src/types/config.js";
-
-// ---------------------------------------------------------------------------
-// Helpers: mock factories
-// ---------------------------------------------------------------------------
-
-const makePlan = (name: string, content: string): Plan => ({
-  variant: { name, guidance: "" },
-  content,
-  metadata: {
-    model: "sonnet",
-    turns: 1,
-    durationMs: 1000,
-    durationApiMs: 800,
-    tokenUsage: {
-      inputTokens: 100,
-      outputTokens: 200,
-      cacheReadInputTokens: 0,
-      cacheCreationInputTokens: 0,
-      costUsd: 0.01,
-    },
-    costUsd: 0.01,
-    stopReason: "end_turn",
-    sessionId: "test",
-  },
-});
-
-const makeConfig = (overrides?: Partial<MergeConfig>): MergeConfig => ({
-  model: "sonnet",
-  strategy: "simple",
-  comparisonMethod: "holistic",
-  dimensions: ["Approach", "Technical depth"],
-  constitution: [],
-  role: "",
-  maxTurns: 30,
-  timeoutMs: 600000,
-  evalScoring: "binary",
-  evalPasses: 1,
-  evalConsensus: "median",
-  projectDescription: "",
-  advocateInstructions: "",
-  outputGoal: "",
-  outputTitle: "Merged Plan",
-  ...overrides,
-});
+import { makePlan, makeDefaultMergeConfig } from "../helpers/factories.js";
 
 // ---------------------------------------------------------------------------
 // buildEvalPrompt — plan embedding
 // ---------------------------------------------------------------------------
 
 describe("buildEvalPrompt — plan embedding", () => {
-  const planA = makePlan("alpha", "Alpha plan content");
-  const planB = makePlan("beta", "Beta plan content");
-  const config = makeConfig();
+  const planA = makePlan({ variant: { name: "alpha", guidance: "" }, content: "Alpha plan content" });
+  const planB = makePlan({ variant: { name: "beta", guidance: "" }, content: "Beta plan content" });
+  const config = makeDefaultMergeConfig();
 
   it("includes all plan contents wrapped in XML tags", () => {
     const result = buildEvalPrompt([planA, planB], config);
@@ -81,10 +36,10 @@ describe("buildEvalPrompt — plan embedding", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildEvalPrompt — dimensions", () => {
-  const plan = makePlan("solo", "Solo plan");
+  const plan = makePlan({ variant: { name: "solo", guidance: "" }, content: "Solo plan" });
 
   it("lists all string dimensions", () => {
-    const config = makeConfig({ dimensions: ["Approach", "Technical depth", "Risk"] });
+    const config = makeDefaultMergeConfig({ dimensions: ["Approach", "Technical depth", "Risk"] });
     const result = buildEvalPrompt([plan], config);
     expect(result).toContain("Approach");
     expect(result).toContain("Technical depth");
@@ -92,7 +47,7 @@ describe("buildEvalPrompt — dimensions", () => {
   });
 
   it("lists dimensions with weight objects by name", () => {
-    const config = makeConfig({
+    const config = makeDefaultMergeConfig({
       dimensions: [
         { name: "Security", weight: 3 },
         { name: "Performance", weight: 2 },
@@ -104,7 +59,7 @@ describe("buildEvalPrompt — dimensions", () => {
   });
 
   it("handles mixed string and weighted dimensions", () => {
-    const config = makeConfig({
+    const config = makeDefaultMergeConfig({
       dimensions: ["Approach", { name: "Security", weight: 3 }],
     });
     const result = buildEvalPrompt([plan], config);
@@ -118,9 +73,9 @@ describe("buildEvalPrompt — dimensions", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildEvalPrompt — binary scoring", () => {
-  const planA = makePlan("alpha", "Alpha content");
-  const planB = makePlan("beta", "Beta content");
-  const config = makeConfig({ evalScoring: "binary" });
+  const planA = makePlan({ variant: { name: "alpha", guidance: "" }, content: "Alpha content" });
+  const planB = makePlan({ variant: { name: "beta", guidance: "" }, content: "Beta content" });
+  const config = makeDefaultMergeConfig({ evalScoring: "binary" });
 
   it("requests binary scoring when evalScoring is binary", () => {
     const result = buildEvalPrompt([planA, planB], config);
@@ -134,9 +89,9 @@ describe("buildEvalPrompt — binary scoring", () => {
 });
 
 describe("buildEvalPrompt — likert scoring", () => {
-  const planA = makePlan("alpha", "Alpha content");
-  const planB = makePlan("beta", "Beta content");
-  const config = makeConfig({ evalScoring: "likert" });
+  const planA = makePlan({ variant: { name: "alpha", guidance: "" }, content: "Alpha content" });
+  const planB = makePlan({ variant: { name: "beta", guidance: "" }, content: "Beta content" });
+  const config = makeDefaultMergeConfig({ evalScoring: "likert" });
 
   it("requests likert scoring when evalScoring is likert", () => {
     const result = buildEvalPrompt([planA, planB], config);
@@ -155,9 +110,9 @@ describe("buildEvalPrompt — likert scoring", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildEvalPrompt — JSON output format", () => {
-  const planA = makePlan("alpha", "Alpha content");
-  const planB = makePlan("beta", "Beta content");
-  const config = makeConfig();
+  const planA = makePlan({ variant: { name: "alpha", guidance: "" }, content: "Alpha content" });
+  const planB = makePlan({ variant: { name: "beta", guidance: "" }, content: "Beta content" });
+  const config = makeDefaultMergeConfig();
 
   it("requests JSON output", () => {
     const result = buildEvalPrompt([planA, planB], config);
@@ -190,9 +145,9 @@ describe("buildEvalPrompt — JSON output format", () => {
 // ---------------------------------------------------------------------------
 
 describe("buildEvalPrompt — convergence assessment", () => {
-  const planA = makePlan("alpha", "Alpha content");
-  const planB = makePlan("beta", "Beta content");
-  const config = makeConfig();
+  const planA = makePlan({ variant: { name: "alpha", guidance: "" }, content: "Alpha content" });
+  const planB = makePlan({ variant: { name: "beta", guidance: "" }, content: "Beta content" });
+  const config = makeDefaultMergeConfig();
 
   it("explains the convergence scale (0.0 to 1.0)", () => {
     const result = buildEvalPrompt([planA, planB], config);

@@ -6,53 +6,8 @@ import {
 } from "../../src/evaluate/scorer.js";
 import { DEFAULT_EVAL_MODEL } from "../../src/evaluate/index.js";
 import type { EvaluateOptions } from "../../src/evaluate/index.js";
-import type { Plan } from "../../src/types/plan.js";
-import type { MergeConfig } from "../../src/types/config.js";
 import type { EvalResult } from "../../src/types/evaluation.js";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-const makePlan = (name: string, content: string): Plan => ({
-  variant: { name, guidance: "" },
-  content,
-  metadata: {
-    model: "haiku",
-    turns: 1,
-    durationMs: 500,
-    durationApiMs: 400,
-    tokenUsage: {
-      inputTokens: 50,
-      outputTokens: 100,
-      cacheReadInputTokens: 0,
-      cacheCreationInputTokens: 0,
-      costUsd: 0.001,
-    },
-    costUsd: 0.001,
-    stopReason: "end_turn",
-    sessionId: "test-session",
-  },
-});
-
-const makeConfig = (overrides?: Partial<MergeConfig>): MergeConfig => ({
-  model: "sonnet",
-  strategy: "simple",
-  comparisonMethod: "holistic",
-  dimensions: ["Approach", "Technical depth"],
-  constitution: [],
-  role: "",
-  maxTurns: 30,
-  timeoutMs: 600_000,
-  evalScoring: "binary",
-  evalPasses: 1,
-  evalConsensus: "median",
-  projectDescription: "",
-  advocateInstructions: "",
-  outputGoal: "",
-  outputTitle: "Merged Plan",
-  ...overrides,
-});
+import { makePlan, makeDefaultMergeConfig } from "../helpers/factories.js";
 
 // ---------------------------------------------------------------------------
 // DEFAULT_EVAL_MODEL constant
@@ -97,9 +52,9 @@ describe("EvaluateOptions interface shape", () => {
 // ---------------------------------------------------------------------------
 
 describe("evaluate pipeline integration — binary scoring", () => {
-  const planA = makePlan("alpha", "Alpha plan content here");
-  const planB = makePlan("beta", "Beta plan content here");
-  const config = makeConfig({
+  const planA = makePlan({ variant: { name: "alpha", guidance: "" }, content: "Alpha plan content here" });
+  const planB = makePlan({ variant: { name: "beta", guidance: "" }, content: "Beta plan content here" });
+  const config = makeDefaultMergeConfig({
     evalScoring: "binary",
     evalConsensus: "majority",
   });
@@ -179,10 +134,10 @@ describe("evaluate pipeline integration — binary scoring", () => {
 });
 
 describe("evaluate pipeline integration — likert scoring", () => {
-  const planA = makePlan("v1", "Version 1 plan");
-  const planB = makePlan("v2", "Version 2 plan");
-  const planC = makePlan("v3", "Version 3 plan");
-  const config = makeConfig({ evalScoring: "likert", evalConsensus: "median" });
+  const planA = makePlan({ variant: { name: "v1", guidance: "" }, content: "Version 1 plan" });
+  const planB = makePlan({ variant: { name: "v2", guidance: "" }, content: "Version 2 plan" });
+  const planC = makePlan({ variant: { name: "v3", guidance: "" }, content: "Version 3 plan" });
+  const config = makeDefaultMergeConfig({ evalScoring: "likert", evalConsensus: "median" });
 
   const mockLikertJson = {
     planScores: [
