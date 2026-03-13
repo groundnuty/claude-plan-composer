@@ -129,6 +129,79 @@ export function computeShannonEntropy(
   return { perNgram, mean };
 }
 
+export interface RetentionResult {
+  readonly overall: number;
+  readonly perVariant: Readonly<Record<string, number>>;
+  readonly retained: readonly string[];
+  readonly lost: readonly string[];
+}
+
+/**
+ * Compute term-level content retention: what fraction of source plan
+ * vocabulary survives in the merged plan.
+ *
+ * Uses extractSignificantWords (same as word-level Jaccard) to extract
+ * content-bearing terms, then measures overlap between sources and merged.
+ * Also computes per-variant retention to detect minority suppression.
+ */
+export function computeRetentionScore(
+  sources: readonly { readonly name: string; readonly content: string }[],
+  mergedContent: string,
+): RetentionResult {
+  const mergedWords = extractSignificantWords(mergedContent);
+  const variantWordSets = sources.map((s) => ({
+    name: s.name,
+    words: extractSignificantWords(s.content),
+  }));
+
+  const allSourceWords = new Set<string>();
+  for (const v of variantWordSets) {
+    for (const w of v.words) {
+      allSourceWords.add(w);
+    }
+  }
+
+  if (allSourceWords.size === 0) {
+    const perVariant: Record<string, number> = {};
+    for (const v of variantWordSets) {
+      perVariant[v.name] = 1.0;
+    }
+    return { overall: 1.0, perVariant, retained: [], lost: [] };
+  }
+
+  const retainedSet = new Set<string>();
+  const lostSet = new Set<string>();
+  for (const word of allSourceWords) {
+    if (mergedWords.has(word)) {
+      retainedSet.add(word);
+    } else {
+      lostSet.add(word);
+    }
+  }
+
+  const overall = retainedSet.size / allSourceWords.size;
+
+  const perVariant: Record<string, number> = {};
+  for (const v of variantWordSets) {
+    if (v.words.size === 0) {
+      perVariant[v.name] = 1.0;
+      continue;
+    }
+    let retained = 0;
+    for (const w of v.words) {
+      if (mergedWords.has(w)) retained++;
+    }
+    perVariant[v.name] = retained / v.words.size;
+  }
+
+  return {
+    overall,
+    perVariant,
+    retained: [...retainedSet].sort(),
+    lost: [...lostSet].sort(),
+  };
+}
+
 /**
  * Compute pairwise word-level Jaccard similarity for plan content.
  *

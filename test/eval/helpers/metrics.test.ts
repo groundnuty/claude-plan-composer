@@ -7,6 +7,7 @@ import {
   computeWordPairwiseJaccard,
   formatComparisonTable,
   computeShannonEntropy,
+  computeRetentionScore,
 } from "./metrics.js";
 
 describe("extractAllHeadings", () => {
@@ -262,5 +263,75 @@ describe("computeShannonEntropy", () => {
   it("defaults to n-gram sizes [1, 2, 3]", () => {
     const result = computeShannonEntropy(["alpha beta gamma delta epsilon"]);
     expect(Object.keys(result.perNgram).map(Number).sort()).toEqual([1, 2, 3]);
+  });
+});
+
+describe("computeRetentionScore", () => {
+  it("returns perfect retention when merged contains all source words", () => {
+    const result = computeRetentionScore(
+      [
+        { name: "a", content: "architecture components integration" },
+        { name: "b", content: "rollback monitoring alerts" },
+      ],
+      "architecture components integration rollback monitoring alerts",
+    );
+    expect(result.overall).toBe(1.0);
+    expect(result.lost).toEqual([]);
+  });
+
+  it("detects lost words", () => {
+    const result = computeRetentionScore(
+      [
+        { name: "a", content: "architecture components integration" },
+        { name: "b", content: "rollback monitoring alerts" },
+      ],
+      "architecture components monitoring",
+    );
+    expect(result.overall).toBeLessThan(1.0);
+    expect(result.overall).toBeGreaterThan(0);
+    expect(result.lost).toContain("integration");
+    expect(result.lost).toContain("rollback");
+    expect(result.lost).toContain("alerts");
+    expect(result.retained).toContain("architecture");
+    expect(result.retained).toContain("components");
+    expect(result.retained).toContain("monitoring");
+  });
+
+  it("computes per-variant retention", () => {
+    const result = computeRetentionScore(
+      [
+        { name: "a", content: "architecture components" },
+        { name: "b", content: "rollback monitoring" },
+      ],
+      "architecture components",  // only variant a's words survive
+    );
+    expect(result.perVariant["a"]).toBe(1.0);
+    expect(result.perVariant["b"]).toBe(0);
+  });
+
+  it("returns perfect retention for empty sources", () => {
+    const result = computeRetentionScore(
+      [{ name: "a", content: "a b c" }],  // no significant words
+      "anything here",
+    );
+    expect(result.overall).toBe(1.0);
+    expect(result.perVariant["a"]).toBe(1.0);
+  });
+
+  it("returns sorted retained and lost arrays", () => {
+    const result = computeRetentionScore(
+      [{ name: "a", content: "zeta alpha beta gamma" }],
+      "alpha gamma",
+    );
+    expect(result.retained).toEqual(["alpha", "gamma"]);
+    expect(result.lost).toEqual(["beta", "zeta"]);
+  });
+
+  it("handles zero retention", () => {
+    const result = computeRetentionScore(
+      [{ name: "a", content: "architecture components integration" }],
+      "completely different vocabulary here",
+    );
+    expect(result.overall).toBe(0);
   });
 });
