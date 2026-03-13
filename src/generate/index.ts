@@ -3,11 +3,8 @@ import * as path from "node:path";
 import type { PlanSet } from "../types/plan.js";
 import type { GenerateConfig } from "../types/config.js";
 import type { OnStatusMessage } from "../monitor/types.js";
-import { IncompatibleFlagsError } from "../types/errors.js";
-import {
-  buildVariantPrompts,
-  buildMultiFilePrompts,
-} from "./prompt-builder.js";
+import { IncompatibleFlagsError, MissingBasePromptError } from "../types/errors.js";
+import { buildPrompts } from "./prompt-builder.js";
 import type { VariantPrompt } from "./prompt-builder.js";
 import { generateLenses } from "./auto-lenses.js";
 import {
@@ -16,12 +13,6 @@ import {
 } from "./session-runner.js";
 
 export interface GenerateOptions {
-  /** Base prompt content (single-file mode) */
-  readonly prompt?: string;
-  /** Multi-file mode: array of {name, content} */
-  readonly promptFiles?: ReadonlyArray<{ name: string; content: string }>;
-  /** Shared context for multi-file mode */
-  readonly context?: string;
   /** Override output directory base */
   readonly outputDir?: string;
   /** Debug mode: single variant, cheaper model */
@@ -30,6 +21,12 @@ export interface GenerateOptions {
   readonly signal?: AbortSignal;
   /** Callback for status message forwarding */
   readonly onStatusMessage?: OnStatusMessage;
+}
+
+export interface MaterializedConfig {
+  readonly basePrompt: string | undefined;
+  readonly context: string | undefined;
+  readonly variantPromptContents: ReadonlyMap<string, string>;
 }
 
 /** Create a timestamped run directory */
@@ -47,21 +44,49 @@ function createRunDirName(): string {
   ].join("");
 }
 
-/** Validate flag combinations */
-function validateFlags(options: GenerateOptions, config: GenerateConfig): void {
-  const isMulti = !!options.promptFiles;
+/** Read all file-based config fields into memory, validate flag combinations */
+export async function materializeConfig(
+  config: GenerateConfig,
+): Promise<MaterializedConfig> {
+  const hasPromptFileVariants = config.variants.some((v) => v.promptFile);
 
-  if (isMulti && config.autoLenses) {
-    throw new IncompatibleFlagsError("auto-lenses requires single-file mode");
-  }
-  if (isMulti && config.sequentialDiversity) {
+  if (hasPromptFileVariants && config.autoLenses) {
     throw new IncompatibleFlagsError(
-      "sequential diversity requires single-file mode",
+      "auto-lenses is incompatible with per-variant prompt_file",
     );
   }
-  if (options.debug && isMulti) {
-    throw new IncompatibleFlagsError("debug requires single-file mode");
+  if (hasPromptFileVariants && config.sequentialDiversity) {
+    throw new IncompatibleFlagsError(
+      "sequential diversity is incompatible with per-variant prompt_file",
+    );
   }
+
+  const allVariantsHavePromptFile = config.variants.every((v) => v.promptFile);
+  if (!allVariantsHavePromptFile && !config.prompt) {
+    throw new MissingBasePromptError();
+  }
+
+  const basePrompt = config.prompt
+    ? await fs.readFile(config.prompt, "utf-8")
+    : undefined;
+
+  const context = config.context
+    ? await fs.readFile(config.context, "utf-8")
+    : undefined;
+
+  const entries: [string, string][] = [];
+  for (const variant of config.variants) {
+    if (variant.promptFile) {
+      const content = await fs.readFile(variant.promptFile, "utf-8");
+      entries.push([variant.name, content]);
+    }
+  }
+
+  return {
+    basePrompt,
+    context,
+    variantPromptContents: new Map(entries),
+  };
 }
 
 /** Apply debug mode overrides */
@@ -91,9 +116,6 @@ export async function generate(
   config: GenerateConfig,
   options: GenerateOptions,
 ): Promise<PlanSet> {
-  validateFlags(options, config);
-
-  // Apply debug overrides
   const resolvedConfig = options.debug
     ? applyDebugOverrides(
         config,
@@ -101,42 +123,43 @@ export async function generate(
       )
     : config;
 
-  // Determine prompt name and base dir
-  const promptName = options.promptFiles
+  const materialized = await materializeConfig(resolvedConfig);
+
+  const hasPromptFiles = resolvedConfig.variants.some((v) => v.promptFile);
+  const promptName = hasPromptFiles
     ? `multi-${createRunDirName().slice(-6)}`
     : "plan";
   const baseDir = options.outputDir ?? path.join("generated-plans", promptName);
   const runDir = path.join(baseDir, createRunDirName());
   await fs.mkdir(runDir, { recursive: true });
 
-  // Build variant prompts
   let variantPrompts: VariantPrompt[];
 
-  if (options.promptFiles) {
-    // Multi-file mode
-    variantPrompts = buildMultiFilePrompts(
-      options.promptFiles,
-      options.context,
+  if (resolvedConfig.autoLenses) {
+    const variants = await generateLenses(
+      materialized.basePrompt!,
       resolvedConfig,
       runDir,
     );
-  } else if (!options.prompt) {
-    throw new Error("Either prompt or promptFiles must be provided");
-  } else {
-    // Single-file mode: resolve variants (config or auto-lenses)
-    const variants = resolvedConfig.autoLenses
-      ? await generateLenses(options.prompt, resolvedConfig, runDir)
-      : resolvedConfig.variants;
-
-    variantPrompts = buildVariantPrompts(
-      options.prompt,
+    variantPrompts = buildPrompts(
+      materialized.basePrompt,
+      materialized.context,
       variants,
+      new Map(),
+      resolvedConfig,
+      runDir,
+    );
+  } else {
+    variantPrompts = buildPrompts(
+      materialized.basePrompt,
+      materialized.context,
+      resolvedConfig.variants,
+      materialized.variantPromptContents,
       resolvedConfig,
       runDir,
     );
   }
 
-  // Run sessions
   const plans = resolvedConfig.sequentialDiversity
     ? await runSequentialSessions(
         variantPrompts,

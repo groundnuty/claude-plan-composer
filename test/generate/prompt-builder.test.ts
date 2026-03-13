@@ -2,8 +2,7 @@ import { describe, it, expect } from "vitest";
 import * as path from "node:path";
 import {
   buildOutputInstruction,
-  buildVariantPrompts,
-  buildMultiFilePrompts,
+  buildPrompts,
 } from "../../src/generate/prompt-builder.js";
 import {
   validatePlanOutput,
@@ -33,8 +32,9 @@ describe("buildOutputInstruction", () => {
   });
 });
 
-describe("buildVariantPrompts", () => {
+describe("buildPrompts", () => {
   const basePrompt = "Create a deployment plan for the API service.";
+  const context = "The project uses Node.js 22 and PostgreSQL 16.";
 
   const variants: readonly Variant[] = [
     { name: "baseline", guidance: "" },
@@ -42,10 +42,12 @@ describe("buildVariantPrompts", () => {
     { name: "breadth", guidance: "Take a wide view." },
   ];
 
-  it("includes base prompt in all variants", () => {
-    const results = buildVariantPrompts(
+  it("uses base prompt for variants without promptFile content (empty map)", () => {
+    const results = buildPrompts(
       basePrompt,
+      undefined,
       variants,
+      new Map(),
       defaultConfig,
       RUN_DIR,
     );
@@ -54,25 +56,44 @@ describe("buildVariantPrompts", () => {
     }
   });
 
-  it("adds guidance section when guidance is non-empty", () => {
-    const results = buildVariantPrompts(
+  it("uses variant-specific content when present in map", () => {
+    const variantContent = "Override content for baseline.";
+    const map = new Map([["baseline", variantContent]]);
+    const results = buildPrompts(
       basePrompt,
+      undefined,
       variants,
+      map,
+      defaultConfig,
+      RUN_DIR,
+    );
+    const baseline = results.find((r) => r.variant.name === "baseline");
+    expect(baseline).toBeDefined();
+    expect(baseline!.fullPrompt).toContain(variantContent);
+    expect(baseline!.fullPrompt).not.toContain(basePrompt);
+  });
+
+  it("appends guidance when non-empty", () => {
+    const results = buildPrompts(
+      basePrompt,
+      undefined,
+      variants,
+      new Map(),
       defaultConfig,
       RUN_DIR,
     );
     const depth = results.find((r) => r.variant.name === "depth");
     expect(depth).toBeDefined();
     expect(depth!.fullPrompt).toContain("## Additional guidance");
-    expect(depth!.fullPrompt).toContain(
-      "Go deep on implementation specifics.",
-    );
+    expect(depth!.fullPrompt).toContain("Go deep on implementation specifics.");
   });
 
   it("omits guidance section when guidance is empty", () => {
-    const results = buildVariantPrompts(
+    const results = buildPrompts(
       basePrompt,
+      undefined,
       variants,
+      new Map(),
       defaultConfig,
       RUN_DIR,
     );
@@ -81,43 +102,12 @@ describe("buildVariantPrompts", () => {
     expect(baseline!.fullPrompt).not.toContain("## Additional guidance");
   });
 
-  it("sets correct planPath for each variant", () => {
-    const results = buildVariantPrompts(
+  it("appends context when provided (under '## Shared context' heading)", () => {
+    const results = buildPrompts(
       basePrompt,
-      variants,
-      defaultConfig,
-      RUN_DIR,
-    );
-    for (const vp of results) {
-      const expected = path.join(RUN_DIR, `plan-${vp.variant.name}.md`);
-      expect(vp.planPath).toBe(expected);
-    }
-  });
-});
-
-describe("buildMultiFilePrompts", () => {
-  const promptFiles = [
-    { name: "architecture", content: "Analyze the system architecture." },
-    { name: "security", content: "Review security posture." },
-  ];
-
-  it("uses file content as base prompt", () => {
-    const results = buildMultiFilePrompts(
-      promptFiles,
-      undefined,
-      defaultConfig,
-      RUN_DIR,
-    );
-    for (let i = 0; i < promptFiles.length; i++) {
-      expect(results[i]!.fullPrompt).toContain(promptFiles[i]!.content);
-    }
-  });
-
-  it("appends shared context when provided", () => {
-    const context = "The project uses Node.js 22 and PostgreSQL 16.";
-    const results = buildMultiFilePrompts(
-      promptFiles,
       context,
+      variants,
+      new Map(),
       defaultConfig,
       RUN_DIR,
     );
@@ -128,14 +118,67 @@ describe("buildMultiFilePrompts", () => {
   });
 
   it("omits context section when undefined", () => {
-    const results = buildMultiFilePrompts(
-      promptFiles,
+    const results = buildPrompts(
+      basePrompt,
       undefined,
+      variants,
+      new Map(),
       defaultConfig,
       RUN_DIR,
     );
     for (const vp of results) {
       expect(vp.fullPrompt).not.toContain("## Shared context");
+    }
+  });
+
+  it("appends guidance to variant with promptFile content (both applied)", () => {
+    const variantContent = "Security-focused analysis prompt.";
+    const guidanceVariant: Variant = {
+      name: "secure",
+      guidance: "Focus on threat modeling.",
+    };
+    const map = new Map([["secure", variantContent]]);
+    const results = buildPrompts(
+      basePrompt,
+      undefined,
+      [guidanceVariant],
+      map,
+      defaultConfig,
+      RUN_DIR,
+    );
+    expect(results[0]!.fullPrompt).toContain(variantContent);
+    expect(results[0]!.fullPrompt).toContain("## Additional guidance");
+    expect(results[0]!.fullPrompt).toContain("Focus on threat modeling.");
+  });
+
+  it("appends context to variant with promptFile content (both applied)", () => {
+    const variantContent = "Security-focused analysis prompt.";
+    const map = new Map([["secure", variantContent]]);
+    const results = buildPrompts(
+      basePrompt,
+      context,
+      [{ name: "secure", guidance: "" }],
+      map,
+      defaultConfig,
+      RUN_DIR,
+    );
+    expect(results[0]!.fullPrompt).toContain(variantContent);
+    expect(results[0]!.fullPrompt).toContain("## Shared context");
+    expect(results[0]!.fullPrompt).toContain(context);
+  });
+
+  it("sets correct planPath for each variant", () => {
+    const results = buildPrompts(
+      basePrompt,
+      undefined,
+      variants,
+      new Map(),
+      defaultConfig,
+      RUN_DIR,
+    );
+    for (const vp of results) {
+      const expected = path.join(RUN_DIR, `plan-${vp.variant.name}.md`);
+      expect(vp.planPath).toBe(expected);
     }
   });
 });

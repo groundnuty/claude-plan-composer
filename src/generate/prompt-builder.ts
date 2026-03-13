@@ -34,15 +34,22 @@ export function buildOutputInstruction(
   ].join("\n");
 }
 
-/** Build variant prompts for single-file mode */
-export function buildVariantPrompts(
-  prompt: string,
+/** Build variant prompts, unified for both single-file and per-variant prompt_file modes */
+export function buildPrompts(
+  basePrompt: string | undefined,
+  context: string | undefined,
   variants: readonly Variant[],
+  variantPromptContents: ReadonlyMap<string, string>,
   _config: GenerateConfig,
   runDir: string,
 ): VariantPrompt[] {
   return variants.map((variant) => {
+    const prompt = variantPromptContents.get(variant.name) ?? basePrompt ?? "";
     const parts: string[] = [prompt];
+
+    if (context) {
+      parts.push(`\n## Shared context\n${context}`);
+    }
 
     if (variant.guidance) {
       parts.push(`\n## Additional guidance\n${variant.guidance}`);
@@ -54,31 +61,6 @@ export function buildVariantPrompts(
       variant,
       fullPrompt: parts.join("\n"),
       planPath: path.join(runDir, `plan-${variant.name}.md`),
-    };
-  });
-}
-
-/** Build variant prompts for multi-file mode */
-export function buildMultiFilePrompts(
-  promptFiles: ReadonlyArray<{ name: string; content: string }>,
-  context: string | undefined,
-  _config: GenerateConfig,
-  runDir: string,
-): VariantPrompt[] {
-  return promptFiles.map((file) => {
-    const parts: string[] = [file.content];
-
-    if (context) {
-      parts.push(`\n## Shared context\n${context}`);
-    }
-
-    parts.push(`\n${buildOutputInstruction(runDir, file.name)}`);
-
-    const variant: Variant = { name: file.name, guidance: "" };
-    return {
-      variant,
-      fullPrompt: parts.join("\n"),
-      planPath: path.join(runDir, `plan-${file.name}.md`),
     };
   });
 }
