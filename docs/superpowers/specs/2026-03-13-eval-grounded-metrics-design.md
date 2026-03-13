@@ -30,8 +30,8 @@ Both metrics are tracked and stored in baselines but NOT used as assertions yet.
 
 ```typescript
 interface EntropyResult {
-  readonly perNgram: ReadonlyMap<number, number>;  // n → entropy value
-  readonly mean: number;                            // average across n-gram sizes
+  readonly perNgram: Readonly<Record<number, number>>;  // n → entropy value
+  readonly mean: number;                                 // average across n-gram sizes
 }
 ```
 
@@ -42,9 +42,10 @@ computeShannonEntropy(texts: string[], ngramSizes?: number[]): EntropyResult
 ```
 
 - Default `ngramSizes`: `[1, 2, 3]`
-- Tokenization: lowercase, split on whitespace/punctuation, filter words ≥4 chars (reuses `extractSignificantWords` logic for unigrams; bigrams/trigrams built from the filtered word sequence)
-- For each n-gram size: build frequency distribution across ALL texts combined, compute H = -Σ p(x) log₂ p(x)
+- Tokenization: lowercase, extract words matching `/[a-z][a-z0-9]{3,}/g` (same regex as `extractSignificantWords`), producing an **ordered array** (not a Set — ordering is needed for bigram/trigram construction). Do NOT call `extractSignificantWords` directly since it returns a deduplicated Set.
+- For each n-gram size: build sliding-window n-grams from the ordered word array, compute frequency distribution across ALL texts combined, compute H = -Σ p(x) log₂ p(x)
 - Returns per-n-gram entropy + mean across all sizes
+- Edge cases: return `{ perNgram: {}, mean: 0 }` when input is empty or produces no tokens
 
 ### Location
 
@@ -53,8 +54,8 @@ computeShannonEntropy(texts: string[], ngramSizes?: number[]): EntropyResult
 ### Integration
 
 `test/eval/diversity.test.ts`:
-- Compute entropy for both diverse and homogeneous plan sets
-- Log both values
+- Compute entropy for each plan set as a single call: `computeShannonEntropy(planSet.plans.map(p => p.content))`
+- Log both values (diverse entropy vs homogeneous entropy)
 - Store in baseline (when saving)
 - Display in comparison table (when comparing)
 - No assertion on entropy yet
@@ -69,10 +70,10 @@ computeShannonEntropy(texts: string[], ngramSizes?: number[]): EntropyResult
 
 ```typescript
 interface RetentionResult {
-  readonly overall: number;                          // |merged ∩ allSources| / |allSources|
-  readonly perVariant: ReadonlyMap<string, number>;  // per-variant retention
-  readonly retained: ReadonlySet<string>;             // words that survived
-  readonly lost: ReadonlySet<string>;                 // words that didn't
+  readonly overall: number;                               // |merged ∩ allSources| / |allSources|
+  readonly perVariant: Readonly<Record<string, number>>;  // per-variant retention
+  readonly retained: readonly string[];                    // words that survived (sorted)
+  readonly lost: readonly string[];                        // words that didn't (sorted)
 }
 ```
 
@@ -89,8 +90,9 @@ computeRetentionScore(
 - Extract significant words from merged plan
 - Overall retention: `|mergedWords ∩ allSourceWords| / |allSourceWords|`
 - Per-variant retention: `|mergedWords ∩ variantWords| / |variantWords|` for each variant
-- `retained` = `mergedWords ∩ allSourceWords`
-- `lost` = `allSourceWords \ mergedWords`
+- `retained` = sorted array of `mergedWords ∩ allSourceWords`
+- `lost` = sorted array of `allSourceWords \ mergedWords`
+- Edge cases: return `{ overall: 1.0, perVariant: {}, retained: [], lost: [] }` when sources have no significant words (nothing to lose = perfect retention). Per-variant: return 1.0 for variants with no significant words.
 
 ### Location
 
@@ -99,7 +101,7 @@ computeRetentionScore(
 ### Integration
 
 `test/eval/coverage.test.ts`:
-- Compute retention after pipeline run
+- Compute retention after pipeline run: `computeRetentionScore(result.planSet.plans.map(p => ({ name: p.variant.name, content: p.content })), result.mergeResult.content)`
 - Log overall + per-variant scores
 - Store in baseline
 - Display in comparison table
@@ -145,8 +147,8 @@ Show "N/A" when baseline lacks these metrics (backward compatibility).
 | File | Change |
 |---|---|
 | `test/eval/helpers/metrics.ts` | Add `EntropyResult`, `RetentionResult`, `computeShannonEntropy`, `computeRetentionScore`; extend `ComparisonMetrics`; update `formatComparisonTable` |
-| `test/eval/helpers/metrics.test.ts` | Unit tests for both new functions |
-| `test/eval/helpers/baseline.ts` | Extend `Baseline` interface with optional fields |
+| `test/eval/helpers/metrics.test.ts` | Add unit tests for both new functions to existing file |
+| `test/eval/helpers/baseline.ts` | Extend `Baseline` interface with optional fields; update `compareBaseline` to pass new metrics through to `ComparisonMetrics` |
 | `test/eval/diversity.test.ts` | Compute + log Shannon entropy for both runs; store in baseline |
 | `test/eval/coverage.test.ts` | Compute + log retention score after merge; store in baseline |
 
