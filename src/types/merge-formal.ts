@@ -77,3 +77,45 @@ export const DisagreementTypeSchema = z.enum([
 ]);
 
 export type DisagreementType = z.infer<typeof DisagreementTypeSchema>;
+
+// ---------------------------------------------------------------------------
+// Definition 4 — Disagreement
+// ---------------------------------------------------------------------------
+/**
+ * Definition 4: Two recommendations addressing the same topic with
+ * incompatible positions.
+ *
+ * Consumed by I11 (analysis stage identifies disagreements), I15 (routes
+ * to per-type strategies), and I7 (recommendation-level matching).
+ */
+export const DisagreementSchema = z.object({
+  recommendationA: RecommendationSchema,
+  recommendationB: RecommendationSchema,
+  type: DisagreementTypeSchema,
+  dimension: z.string().min(1),
+});
+
+export type Disagreement = z.infer<typeof DisagreementSchema>;
+
+// ---------------------------------------------------------------------------
+// Definition 5 — TypedResolution
+// ---------------------------------------------------------------------------
+/**
+ * Definition 5: A resolved disagreement with strategy and rationale.
+ *
+ * The `strategy` field matches `disagreement.type` in the normal case,
+ * but they are separate because a resolution may use a different strategy
+ * than the initial classification suggests (e.g., a `trade-off`
+ * disagreement resolved via `arbitrary` selection if synthesis fails).
+ *
+ * Consumed by I15 (per-type resolution strategies) and I12 (resolution
+ * quality auditing).
+ */
+export const TypedResolutionSchema = z.object({
+  disagreement: DisagreementSchema,
+  resolved: RecommendationSchema,
+  strategy: DisagreementTypeSchema,
+  rationale: z.string().min(1),
+});
+
+export type TypedResolution = z.infer<typeof TypedResolutionSchema>;
