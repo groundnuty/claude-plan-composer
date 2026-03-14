@@ -49,6 +49,7 @@ export const GenerateConfigSchema = z.object({
   lensCount: z.number().default(4),
   lensTimeoutMs: z.number().default(120_000),
   minOutputBytes: z.number().default(5000),
+  diversityThreshold: z.number().min(0).max(1).default(0.30),
 });
 
 export type GenerateConfig = z.infer<typeof GenerateConfigSchema>;

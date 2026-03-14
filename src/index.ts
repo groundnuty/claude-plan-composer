@@ -17,6 +17,7 @@ export type {
   VerifyResult,
   PipelineConfig,
   PipelineResult,
+  DiversityResult,
 } from "./types/index.js";
 
 export {
@@ -50,6 +51,10 @@ export {
   DimensionAnalysisSchema,
   MergeFormalResultSchema,
 } from "./types/merge-formal.js";
+
+// Diversity types
+export { DiversityResultSchema } from "./types/diversity.js";
+
 export type {
   Recommendation,
   DisagreementType,
@@ -68,6 +73,8 @@ export {
   readEvalResult,
   writeVerifyResult,
   writePreMortemResult,
+  writeDiversityResult,
+  readDiversityResult,
   loadMcpConfig,
   resolveGenerateConfig,
   resolveMergeConfig,
@@ -91,6 +98,13 @@ export {
   computeJaccard,
 } from "./evaluate/jaccard.js";
 export type { JaccardResult, JaccardPair } from "./evaluate/jaccard.js";
+export {
+  computeShannonEntropy,
+  extractOrderedWords,
+  computeNormalizedEntropy,
+} from "./evaluate/entropy.js";
+export type { EntropyResult } from "./evaluate/entropy.js";
+export { measureDiversity } from "./evaluate/diversity.js";
 
 // Verify
 export { verify } from "./verify/index.js";

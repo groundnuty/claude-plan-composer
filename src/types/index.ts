@@ -28,6 +28,7 @@ export type {
   VerifyResult,
 } from "./evaluation.js";
 export type { PipelineConfig, PipelineResult } from "./pipeline.js";
+export type { DiversityResult } from "./diversity.js";
 export {
   CpcError,
   ConfigValidationError,

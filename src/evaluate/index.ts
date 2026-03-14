@@ -100,3 +100,14 @@ export async function evaluate(
   const rawResponse = parseEvalResponse(responseText);
   return { ...buildEvalResult(rawResponse, config.evalConsensus), jaccard };
 }
+
+// Entropy (extracted from test helpers in I2)
+export {
+  computeShannonEntropy,
+  extractOrderedWords,
+  computeNormalizedEntropy,
+} from "./entropy.js";
+export type { EntropyResult } from "./entropy.js";
+
+// Diversity measurement
+export { measureDiversity } from "./diversity.js";

@@ -10,7 +10,11 @@ import {
   writeMergeResult,
   writeEvalResult,
   writeVerifyResult,
+  writeDiversityResult,
 } from "./io.js";
+import { measureDiversity } from "../evaluate/diversity.js";
+import type { OnStatusMessage } from "../monitor/types.js";
+import { NdjsonLogger } from "./logger.js";
 import type { GenerateConfig, MergeConfig } from "../types/config.js";
 import type { PipelineResult } from "../types/pipeline.js";
 
@@ -21,6 +25,7 @@ export interface RunOptions {
   readonly skipEval?: boolean;
   readonly verify?: boolean;
   readonly signal?: AbortSignal;
+  readonly onStatusMessage?: OnStatusMessage;
 }
 
 /**
@@ -40,7 +45,28 @@ export async function runPipeline(
   // Step 2: Persist generated plans
   await writePlanSet(planSet, planSet.runDir);
 
-  // Step 3: Evaluate plans (optional — skipped when skipEval is true)
+  // Step 3: Measure diversity (always runs, even with skipEval)
+  const diversityResult = measureDiversity(
+    planSet.plans,
+    genConfig.diversityThreshold,
+  );
+  await writeDiversityResult(diversityResult, planSet.runDir);
+
+  // Log diversity metrics to NDJSON (spec: { type: "diversity", ...result })
+  const diversityLogger = new NdjsonLogger(
+    `${planSet.runDir}/diversity.ndjson`,
+  );
+  await diversityLogger.write({ type: "diversity", ...diversityResult });
+  await diversityLogger.close();
+
+  if (diversityResult.warning) {
+    options.onStatusMessage?.("diversity", {
+      type: "diversity_warning",
+      message: diversityResult.warning,
+    });
+  }
+
+  // Step 4: Evaluate plans (optional — skipped when skipEval is true)
   let evalResult = undefined;
   if (!options.skipEval) {
     evalResult = await evaluate(planSet, mergeConfig, {
@@ -50,13 +76,13 @@ export async function runPipeline(
     await writeEvalResult(evalResult, planSet.runDir);
   }
 
-  // Step 4: Merge plans (pass evalResult for eval-informed merging)
+  // Step 5: Merge plans (pass evalResult for eval-informed merging)
   const mergeResult = await merge(planSet, mergeConfig, { evalResult });
 
-  // Step 5: Persist merge result
+  // Step 6: Persist merge result
   await writeMergeResult(mergeResult, planSet.runDir);
 
-  // Step 6: Verify merged plan (optional — enabled when verify flag is set)
+  // Step 7: Verify merged plan (optional — enabled when verify flag is set)
   let verifyResult = undefined;
   if (options.verify) {
     verifyResult = await verify(mergeResult, planSet, {
@@ -66,5 +92,5 @@ export async function runPipeline(
     await writeVerifyResult(verifyResult, planSet.runDir);
   }
 
-  return { planSet, mergeResult, evalResult, verifyResult };
+  return { planSet, mergeResult, evalResult, verifyResult, diversityResult };
 }
