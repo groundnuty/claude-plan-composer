@@ -7,6 +7,34 @@ export const VariantSchema = z.object({
   promptFile: z.string().optional(),
 });
 
+/** MCP stdio server config (command + args) */
+export const McpStdioServerSchema = z.object({
+  type: z.literal("stdio").optional(),
+  command: z.string(),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+});
+
+/** MCP SSE server config (URL-based) */
+export const McpSseServerSchema = z.object({
+  type: z.literal("sse"),
+  url: z.string(),
+  headers: z.record(z.string(), z.string()).optional(),
+});
+
+/** MCP HTTP server config (URL-based) */
+export const McpHttpServerSchema = z.object({
+  type: z.literal("http"),
+  url: z.string(),
+  headers: z.record(z.string(), z.string()).optional(),
+});
+
+export const McpServerSchema = z.union([
+  McpStdioServerSchema,
+  McpSseServerSchema,
+  McpHttpServerSchema,
+]);
+
 export const GenerateConfigSchema = z.object({
   model: z.string().default("opus"),
   maxTurns: z.number().default(80),
@@ -17,6 +45,7 @@ export const GenerateConfigSchema = z.object({
   context: z.string().optional(),
   additionalDirs: z.array(z.string()).default([]),
   mcpConfig: z.string().optional(),
+  mcpServers: z.record(z.string(), McpServerSchema).default({}),
   strictMcp: z.boolean().default(true),
   tools: z
     .array(z.string())
@@ -72,6 +101,7 @@ export const MergeConfigSchema = z.object({
   budgetUsd: z.number().optional(),
   workDir: z.string().default(""),
   mcpConfig: z.string().optional(),
+  mcpServers: z.record(z.string(), McpServerSchema).default({}),
   strictMcp: z.boolean().default(true),
   settingSources: z.array(z.enum(["user", "project", "local"])).default([]),
   strategy: MergeStrategySchema.default("simple"),

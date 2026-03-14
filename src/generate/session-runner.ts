@@ -59,7 +59,8 @@ export async function extractPlan(
   if (!content) {
     throw new PlanExtractionError(
       variant.name,
-      "No plan file and no text content",
+      `No plan file found at ${planPath} and no text content in assistant messages. ` +
+        "Ensure your prompt instructs the agent to use the Write tool to save output.",
     );
   }
 
@@ -129,6 +130,10 @@ async function runVariantSession(
           config.additionalDirs.length > 0 ? config.additionalDirs : undefined,
         systemPrompt: config.systemPrompt,
         settingSources: config.settingSources,
+        mcpServers:
+          Object.keys(config.mcpServers).length > 0
+            ? config.mcpServers
+            : undefined,
         strictMcpConfig: config.strictMcp,
         persistSession: false,
         abortController,

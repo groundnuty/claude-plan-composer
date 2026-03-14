@@ -109,13 +109,14 @@ export class AgentTeamsStrategy implements MergeStrategy {
         prompt,
         options: {
           model: config.model,
-          maxTurns: config.maxTurns * 3, // team runs need more turns
+          maxTurns: config.maxTurns,
           maxBudgetUsd: config.budgetUsd,
           tools: [
             "Read",
             "Write",
             "Glob",
             "Grep",
+            "Agent",
             "TeamCreate",
             "SendMessage",
             "TeamDelete",
@@ -124,6 +125,10 @@ export class AgentTeamsStrategy implements MergeStrategy {
           allowDangerouslySkipPermissions: true,
           cwd: config.workDir || undefined,
           settingSources: config.settingSources,
+          mcpServers:
+            Object.keys(config.mcpServers).length > 0
+              ? config.mcpServers
+              : undefined,
           strictMcpConfig: config.strictMcp,
           persistSession: false,
           env: {
@@ -158,7 +163,7 @@ export class AgentTeamsStrategy implements MergeStrategy {
       content = await fs.readFile(mergePlanPath, "utf-8");
     } catch {
       throw new MergeError(
-        "Agent-teams session did not write the merged plan file",
+        `Agent-teams session did not write the merged plan file at ${mergePlanPath}`,
       );
     }
 

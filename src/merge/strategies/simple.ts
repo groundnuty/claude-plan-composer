@@ -41,6 +41,10 @@ export class SimpleStrategy implements MergeStrategy {
           allowDangerouslySkipPermissions: true,
           cwd: config.workDir || undefined,
           settingSources: config.settingSources,
+          mcpServers:
+            Object.keys(config.mcpServers).length > 0
+              ? config.mcpServers
+              : undefined,
           strictMcpConfig: config.strictMcp,
           persistSession: false,
           systemPrompt: config.systemPrompt,
@@ -74,7 +78,9 @@ export class SimpleStrategy implements MergeStrategy {
     try {
       content = await fs.readFile(mergePlanPath, "utf-8");
     } catch {
-      throw new MergeError("Merge session did not write the merged plan file");
+      throw new MergeError(
+        `Merge session did not write the merged plan file at ${mergePlanPath}`,
+      );
     }
 
     const modelKeys = Object.keys(resultMsg.modelUsage ?? {});

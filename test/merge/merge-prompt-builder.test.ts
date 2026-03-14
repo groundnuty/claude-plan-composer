@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import {
   embedPlan,
   formatEvalSummary,
@@ -274,5 +275,37 @@ describe("buildMergePrompt", () => {
     // Pairwise prompt has Phase 1 as PAIRWISE COMPARISONS
     expect(result).toContain("PAIRWISE COMPARISONS");
     expect(result).toContain("TOURNAMENT TALLY");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// path resolution (Issue #2: work_dir causes output files written to wrong location)
+// ---------------------------------------------------------------------------
+
+describe("mergePlanPath resolution", () => {
+  it("path.resolve produces absolute path from relative runDir", () => {
+    // This is the contract merge/index.ts relies on
+    const relativeRunDir = "generated-plans/plan/run-001";
+    const resolved = path.resolve(relativeRunDir, "merged-plan.md");
+    expect(path.isAbsolute(resolved)).toBe(true);
+    expect(resolved).toContain("merged-plan.md");
+  });
+
+  it("path.resolve preserves already-absolute runDir", () => {
+    const absoluteRunDir = "/tmp/test-run";
+    const resolved = path.resolve(absoluteRunDir, "merged-plan.md");
+    expect(resolved).toBe("/tmp/test-run/merged-plan.md");
+  });
+
+  it("holistic prompt embeds absolute mergePlanPath correctly", () => {
+    const planA = makePlan({ variant: { name: "a", guidance: "" }, content: "A" });
+    const planB = makePlan({ variant: { name: "b", guidance: "" }, content: "B" });
+    const plans = makePlanSet([planA, planB]);
+    const config = makeDefaultMergeConfig();
+    // Simulate what merge/index.ts now does: path.resolve
+    const absoluteMergePath = path.resolve(plans.runDir, "merged-plan.md");
+    const result = buildHolisticMergePrompt(plans, config, absoluteMergePath);
+    expect(result).toContain(absoluteMergePath);
+    expect(path.isAbsolute(absoluteMergePath)).toBe(true);
   });
 });
