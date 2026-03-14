@@ -41,6 +41,24 @@ export {
 } from "./types/config.js";
 export type { GenerateConfig, MergeConfig } from "./types/config.js";
 
+// Formal merge types (EditFusion/BSM)
+export {
+  RecommendationSchema,
+  DisagreementTypeSchema,
+  DisagreementSchema,
+  TypedResolutionSchema,
+  DimensionAnalysisSchema,
+  MergeFormalResultSchema,
+} from "./types/merge-formal.js";
+export type {
+  Recommendation,
+  DisagreementType,
+  Disagreement,
+  TypedResolution,
+  DimensionAnalysis,
+  MergeFormalResult,
+} from "./types/merge-formal.js";
+
 // Pipeline utilities
 export {
   writePlanSet,

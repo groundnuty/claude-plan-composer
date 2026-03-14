@@ -12,6 +12,14 @@ export type {
   MergeMetadata,
 } from "./merge-result.js";
 export type {
+  Recommendation,
+  DisagreementType,
+  Disagreement,
+  TypedResolution,
+  DimensionAnalysis,
+  MergeFormalResult,
+} from "./merge-formal.js";
+export type {
   DimensionScore,
   EvalResult,
   Gap,
