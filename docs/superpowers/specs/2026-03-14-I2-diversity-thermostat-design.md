@@ -63,7 +63,7 @@ Extracts `computeShannonEntropy()` and `extractOrderedWords()` from `test/eval/h
 
 ```typescript
 export interface EntropyResult {
-  readonly perNgram: Readonly<Record<number, number>>;
+  readonly perNgram: Readonly<Record<string, number>>;  // string keys (JSON compat)
   readonly mean: number;
 }
 
@@ -75,18 +75,22 @@ export function computeShannonEntropy(
 ): EntropyResult;
 ```
 
+**Note on `perNgram` key type:** Uses `string` keys (not `number`) because JSON serialization stringifies object keys. The existing `EntropyResult` in `test/eval/helpers/metrics.ts` uses `Record<number, number>` — this must be updated to `Record<string, number>` when extracting to `src/evaluate/entropy.ts`.
+
+**Note on `extractOrderedWords`:** This function is currently private (not exported) in `test/eval/helpers/metrics.ts`. It is promoted to a public export in `src/evaluate/entropy.ts` because `computeNormalizedEntropy` needs it internally and it may be useful for downstream consumers.
+
 **Additionally**, a new normalization helper:
 
 ```typescript
 export function computeNormalizedEntropy(
   texts: readonly string[],
   ngramSizes?: readonly number[],
-): { readonly perNgram: Readonly<Record<number, number>>; readonly mean: number };
+): { readonly perNgram: Readonly<Record<string, number>>; readonly mean: number };
 ```
 
 Returns `H_n / log2(V_n)` for each n-gram size, and mean across sizes. When `V_n <= 1` (zero or one unique n-gram), normalized value is 0 (no diversity).
 
-**Test helper change:** `test/eval/helpers/metrics.ts` replaces its implementations of `computeShannonEntropy` and `extractOrderedWords` with re-exports from `src/evaluate/entropy.ts`. All existing eval tests continue to work unchanged.
+**Test helper change:** `test/eval/helpers/metrics.ts` replaces its `computeShannonEntropy` implementation with a re-export from `src/evaluate/entropy.ts`. The `EntropyResult` type re-export must also be updated to the new `Record<string, number>` key type. `extractOrderedWords` was never exported from the test helper, so no re-export wiring is needed for it. All existing eval tests continue to work unchanged (JavaScript coerces numeric keys to strings automatically).
 
 ---
 
@@ -125,9 +129,19 @@ generate() → writePlanSet() → measureDiversity() → writeDiversityResult() 
 ```
 
 - Always runs (not gated by `skipEval`)
-- Logs diversity metrics to NDJSON logger as `{ type: "diversity", ...result }`
-- Fires `onStatusMessage({ type: "diversity_warning", message: result.warning })` if warning present
-- Writes `diversity.json` to run directory via `writeDiversityResult()`
+- `measureDiversity()` is a **pure computation function** — it takes plans and threshold, returns `DiversityResult`. No side effects.
+- The **pipeline orchestrator** (`run.ts`) is responsible for:
+  - Calling `measureDiversity(planSet.plans, config.diversityThreshold)`
+  - Logging diversity metrics to NDJSON logger as `{ type: "diversity", ...result }`
+  - Firing `onStatusMessage("diversity", { type: "diversity_warning", message: result.warning })` if `result.warning` is present (two-argument signature matching existing `OnStatusMessage` convention)
+  - Writing `diversity.json` to run directory via `writeDiversityResult()`
+  - Storing the result on `PipelineResult.diversityResult`
+
+**Modified file: `src/types/pipeline.ts`**
+
+Add `diversityResult?: DiversityResult` to `PipelineResult` so callers of `runPipeline()` have programmatic access to the diversity result (library-first pattern).
+
+**Modified file: `src/pipeline/io.ts`**
 
 **Modified file: `src/pipeline/io.ts`**
 
@@ -164,17 +178,18 @@ This threshold controls when the low-diversity warning fires. Default 0.30 catch
 |---|---|
 | `src/types/diversity.ts` | Create: `DiversityResultSchema` + inferred type |
 | `src/types/config.ts` | Modify: add `diversityThreshold` to `GenerateConfigSchema` |
-| `src/types/index.ts` | Modify: re-export `DiversityResult` |
-| `src/index.ts` | Modify: barrel export `measureDiversity`, `DiversityResultSchema`, `DiversityResult` |
+| `src/types/pipeline.ts` | Modify: add `diversityResult?: DiversityResult` to `PipelineResult` |
+| `src/types/index.ts` | Modify: re-export `DiversityResult` type |
+| `src/index.ts` | Modify: barrel export `measureDiversity` from evaluate, `DiversityResultSchema` from types (direct, not via types barrel — matches existing schema export pattern), `DiversityResult` type via types barrel |
 | `src/evaluate/entropy.ts` | Create: extracted `computeShannonEntropy`, `extractOrderedWords`, new `computeNormalizedEntropy` |
-| `src/evaluate/diversity.ts` | Create: `measureDiversity()` function |
+| `src/evaluate/diversity.ts` | Create: `measureDiversity()` pure computation function |
 | `src/evaluate/index.ts` | Modify: re-export from `entropy.ts` and `diversity.ts` |
-| `src/pipeline/run.ts` | Modify: call `measureDiversity()` after `writePlanSet()` |
+| `src/pipeline/run.ts` | Modify: call `measureDiversity()` after `writePlanSet()`, handle NDJSON logging + `onStatusMessage` callback + write artifact |
 | `src/pipeline/io.ts` | Modify: add `writeDiversityResult()` / `readDiversityResult()` |
 | `test/types/diversity.test.ts` | Create: Zod schema validation tests |
 | `test/evaluate/entropy.test.ts` | Create: unit tests for extracted entropy + new normalized entropy |
 | `test/evaluate/diversity.test.ts` | Create: `measureDiversity()` unit tests |
-| `test/eval/helpers/metrics.ts` | Modify: replace entropy implementations with re-exports from `src/evaluate/entropy.ts` |
+| `test/eval/helpers/metrics.ts` | Modify: replace `computeShannonEntropy` and `EntropyResult` with re-exports from `src/evaluate/entropy.ts` |
 
 ## What This Does NOT Change
 
