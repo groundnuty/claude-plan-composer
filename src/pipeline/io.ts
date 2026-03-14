@@ -5,6 +5,7 @@ import type { Plan, PlanMetadata, PlanSet, TokenUsage } from "../types/plan.js";
 import type { MergeResult } from "../types/merge-result.js";
 import type { EvalResult, VerifyResult } from "../types/evaluation.js";
 import type { PreMortemResult } from "../verify/pre-mortem.js";
+import type { DiversityResult } from "../types/diversity.js";
 import { PlanExtractionError } from "../types/errors.js";
 
 /** Write a PlanSet to disk: plan-*.md + plan-*.meta.json + latest symlink */
@@ -181,4 +182,28 @@ export async function writePreMortemResult(
     path.join(dir, "pre-mortem.json"),
     JSON.stringify(result, null, 2),
   );
+}
+
+/** Write diversity measurement result to disk: diversity.json */
+export async function writeDiversityResult(
+  result: DiversityResult,
+  dir: string,
+): Promise<void> {
+  await fs.writeFile(
+    path.join(dir, "diversity.json"),
+    JSON.stringify(result, null, 2),
+  );
+}
+
+/** Read diversity measurement result from disk, returns undefined if file not found */
+export async function readDiversityResult(
+  dir: string,
+): Promise<DiversityResult | undefined> {
+  const filePath = path.join(dir, "diversity.json");
+  try {
+    const raw = await fs.readFile(filePath, "utf-8");
+    return JSON.parse(raw) as DiversityResult;
+  } catch {
+    return undefined;
+  }
 }

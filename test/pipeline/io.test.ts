@@ -11,6 +11,8 @@ import {
   writeEvalResult,
   readEvalResult,
   writeVerifyResult,
+  writeDiversityResult,
+  readDiversityResult,
 } from "../../src/pipeline/io.js";
 import { NdjsonLogger } from "../../src/pipeline/logger.js";
 import { PlanExtractionError } from "../../src/types/errors.js";
@@ -425,5 +427,61 @@ describe("writeVerifyResult", () => {
     expect(raw.gates[1]!.pass).toBe(false);
     expect(raw.gates[1]!.findings).toHaveLength(2);
     expect(raw.gates[2]!.gate).toBe("actionability");
+  });
+});
+
+describe("writeDiversityResult / readDiversityResult", () => {
+  const makeDiversityResult = () => ({
+    jaccardDistance: 0.65,
+    shannonEntropy: {
+      perNgram: { "1": 3.2, "2": 2.8, "3": 2.1 },
+      mean: 2.7,
+    },
+    normalizedEntropy: 0.72,
+    compositeScore: 0.685,
+  });
+
+  it("writes diversity.json to directory", async () => {
+    const result = makeDiversityResult();
+    await writeDiversityResult(result, tmpDir);
+
+    const raw = JSON.parse(
+      await fs.readFile(path.join(tmpDir, "diversity.json"), "utf-8"),
+    );
+    expect(raw.compositeScore).toBe(0.685);
+    expect(raw.jaccardDistance).toBe(0.65);
+    expect(raw.normalizedEntropy).toBe(0.72);
+    expect(raw.shannonEntropy.mean).toBe(2.7);
+    expect(raw.shannonEntropy.perNgram["1"]).toBe(3.2);
+  });
+
+  it("readDiversityResult returns undefined if file does not exist", async () => {
+    const result = await readDiversityResult(tmpDir);
+    expect(result).toBeUndefined();
+  });
+
+  it("readDiversityResult loads existing diversity.json", async () => {
+    const diversityResult = makeDiversityResult();
+    await writeDiversityResult(diversityResult, tmpDir);
+
+    const loaded = await readDiversityResult(tmpDir);
+    expect(loaded).toBeDefined();
+    expect(loaded!.compositeScore).toBe(0.685);
+    expect(loaded!.jaccardDistance).toBe(0.65);
+    expect(loaded!.shannonEntropy.perNgram["2"]).toBe(2.8);
+  });
+
+  it("preserves warning field through write/read cycle", async () => {
+    const result = {
+      ...makeDiversityResult(),
+      compositeScore: 0.15,
+      warning: "Low diversity detected (score: 0.15, threshold: 0.30)",
+    };
+    await writeDiversityResult(result, tmpDir);
+
+    const loaded = await readDiversityResult(tmpDir);
+    expect(loaded!.warning).toBe(
+      "Low diversity detected (score: 0.15, threshold: 0.30)",
+    );
   });
 });
