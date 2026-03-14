@@ -130,6 +130,10 @@ async function runVariantSession(
           config.additionalDirs.length > 0 ? config.additionalDirs : undefined,
         systemPrompt: config.systemPrompt,
         settingSources: config.settingSources,
+        mcpServers:
+          Object.keys(config.mcpServers).length > 0
+            ? config.mcpServers
+            : undefined,
         strictMcpConfig: config.strictMcp,
         persistSession: false,
         abortController,

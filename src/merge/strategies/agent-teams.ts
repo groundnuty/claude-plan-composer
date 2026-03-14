@@ -125,6 +125,10 @@ export class AgentTeamsStrategy implements MergeStrategy {
           allowDangerouslySkipPermissions: true,
           cwd: config.workDir || undefined,
           settingSources: config.settingSources,
+          mcpServers:
+            Object.keys(config.mcpServers).length > 0
+              ? config.mcpServers
+              : undefined,
           strictMcpConfig: config.strictMcp,
           persistSession: false,
           env: {
