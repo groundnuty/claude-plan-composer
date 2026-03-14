@@ -4,6 +4,8 @@ import {
   RecommendationSchema,
   DisagreementSchema,
   TypedResolutionSchema,
+  DimensionAnalysisSchema,
+  MergeFormalResultSchema,
 } from "../../src/types/merge-formal.js";
 
 describe("DisagreementTypeSchema", () => {
@@ -164,5 +166,119 @@ describe("TypedResolutionSchema", () => {
   it("rejects missing disagreement", () => {
     const { disagreement: _d, ...noDisagreement } = valid;
     expect(() => TypedResolutionSchema.parse(noDisagreement)).toThrow();
+  });
+});
+
+describe("DimensionAnalysisSchema", () => {
+  const rec = {
+    topic: "caching",
+    position: "use Redis",
+    evidence: "fast",
+    confidence: 0.9,
+  };
+
+  it("accepts a valid dimension analysis with all arrays populated", () => {
+    const valid = {
+      dimension: "performance",
+      recommendations: [rec],
+      disagreements: [
+        {
+          recommendationA: rec,
+          recommendationB: { ...rec, position: "use Memcached", confidence: 0.7 },
+          type: "trade-off",
+          dimension: "performance",
+        },
+      ],
+      resolutions: [
+        {
+          disagreement: {
+            recommendationA: rec,
+            recommendationB: { ...rec, position: "use Memcached", confidence: 0.7 },
+            type: "trade-off",
+            dimension: "performance",
+          },
+          resolved: { ...rec, position: "Redis with pooling", confidence: 0.85 },
+          strategy: "trade-off",
+          rationale: "Redis wins on throughput",
+        },
+      ],
+    };
+    const result = DimensionAnalysisSchema.parse(valid);
+    expect(result.dimension).toBe("performance");
+    expect(result.recommendations).toHaveLength(1);
+    expect(result.disagreements).toHaveLength(1);
+    expect(result.resolutions).toHaveLength(1);
+  });
+
+  it("accepts empty arrays (dimension with no disagreements)", () => {
+    const result = DimensionAnalysisSchema.parse({
+      dimension: "security",
+      recommendations: [],
+      disagreements: [],
+      resolutions: [],
+    });
+    expect(result.recommendations).toHaveLength(0);
+    expect(result.disagreements).toHaveLength(0);
+    expect(result.resolutions).toHaveLength(0);
+  });
+
+  it("rejects empty dimension name", () => {
+    expect(() =>
+      DimensionAnalysisSchema.parse({
+        dimension: "",
+        recommendations: [],
+        disagreements: [],
+        resolutions: [],
+      }),
+    ).toThrow();
+  });
+});
+
+describe("MergeFormalResultSchema", () => {
+  it("accepts a result with dimensions and unresolved disagreements", () => {
+    const rec = {
+      topic: "auth",
+      position: "use OAuth",
+      evidence: "standard",
+      confidence: 0.8,
+    };
+    const disagreement = {
+      recommendationA: rec,
+      recommendationB: { ...rec, position: "use API keys", confidence: 0.6 },
+      type: "arbitrary",
+      dimension: "security",
+    };
+    const valid = {
+      dimensions: [
+        {
+          dimension: "security",
+          recommendations: [rec],
+          disagreements: [disagreement],
+          resolutions: [],
+        },
+      ],
+      unresolved: [disagreement],
+    };
+    const result = MergeFormalResultSchema.parse(valid);
+    expect(result.dimensions).toHaveLength(1);
+    expect(result.unresolved).toHaveLength(1);
+    expect(result.unresolved[0].type).toBe("arbitrary");
+  });
+
+  it("accepts empty dimensions and unresolved arrays", () => {
+    const result = MergeFormalResultSchema.parse({
+      dimensions: [],
+      unresolved: [],
+    });
+    expect(result.dimensions).toHaveLength(0);
+    expect(result.unresolved).toHaveLength(0);
+  });
+
+  it("rejects missing dimensions field", () => {
+    expect(() => MergeFormalResultSchema.parse({ unresolved: [] })).toThrow();
+  });
+
+  it("rejects missing unresolved field", () => {
+    expect(() => MergeFormalResultSchema.parse({ dimensions: [] })).toThrow();
   });
 });

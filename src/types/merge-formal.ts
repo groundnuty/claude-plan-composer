@@ -119,3 +119,38 @@ export const TypedResolutionSchema = z.object({
 });
 
 export type TypedResolution = z.infer<typeof TypedResolutionSchema>;
+
+// ---------------------------------------------------------------------------
+// Definition 6 — Dimension-Decomposed Merge (structural types)
+// ---------------------------------------------------------------------------
+/**
+ * Definition 6 (Dimension-Decomposed Merge): The merge algorithm iterates
+ * over quality dimensions, identifying and resolving disagreements within
+ * each, then composing the final merged plan.
+ *
+ * `DimensionAnalysis` captures the per-dimension intermediate state:
+ * recommendations extracted, disagreements identified, and resolutions
+ * produced. `MergeFormalResult` aggregates across all dimensions plus
+ * any disagreements that could not be resolved.
+ *
+ * The merge algorithm itself is implemented in I11 (two-stage merge).
+ * These types capture the data shapes it produces and consumes.
+ *
+ * Consumed by I11 (produces DimensionAnalysis in analysis stage) and
+ * I12 (consumes MergeFormalResult for retention verification).
+ */
+export const DimensionAnalysisSchema = z.object({
+  dimension: z.string().min(1),
+  recommendations: z.array(RecommendationSchema),
+  disagreements: z.array(DisagreementSchema),
+  resolutions: z.array(TypedResolutionSchema),
+});
+
+export type DimensionAnalysis = z.infer<typeof DimensionAnalysisSchema>;
+
+export const MergeFormalResultSchema = z.object({
+  dimensions: z.array(DimensionAnalysisSchema),
+  unresolved: z.array(DisagreementSchema),
+});
+
+export type MergeFormalResult = z.infer<typeof MergeFormalResultSchema>;
