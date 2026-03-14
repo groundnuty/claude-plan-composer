@@ -74,7 +74,9 @@ export class SimpleStrategy implements MergeStrategy {
     try {
       content = await fs.readFile(mergePlanPath, "utf-8");
     } catch {
-      throw new MergeError("Merge session did not write the merged plan file");
+      throw new MergeError(
+        `Merge session did not write the merged plan file at ${mergePlanPath}`,
+      );
     }
 
     const modelKeys = Object.keys(resultMsg.modelUsage ?? {});

@@ -14,7 +14,7 @@ export function buildOutputInstruction(
   runDir: string,
   variantName: string,
 ): string {
-  const outputPath = path.join(runDir, `plan-${variantName}.md`);
+  const outputPath = path.resolve(runDir, `plan-${variantName}.md`);
   return [
     "## Output format (CRITICAL)",
     "Write the COMPLETE plan to this exact file path using the Write tool:",
@@ -60,7 +60,7 @@ export function buildPrompts(
     return {
       variant,
       fullPrompt: parts.join("\n"),
-      planPath: path.join(runDir, `plan-${variant.name}.md`),
+      planPath: path.resolve(runDir, `plan-${variant.name}.md`),
     };
   });
 }

@@ -58,7 +58,7 @@ export async function merge(
     plans: validPlans,
   };
 
-  const mergePlanPath = path.join(plans.runDir, "merged-plan.md");
+  const mergePlanPath = path.resolve(plans.runDir, "merged-plan.md");
   const strategy = createStrategy(config.strategy);
   return strategy.merge(
     filteredPlanSet,

@@ -109,7 +109,7 @@ export class AgentTeamsStrategy implements MergeStrategy {
         prompt,
         options: {
           model: config.model,
-          maxTurns: config.maxTurns * 3, // team runs need more turns
+          maxTurns: config.maxTurns,
           maxBudgetUsd: config.budgetUsd,
           tools: [
             "Read",
@@ -158,7 +158,7 @@ export class AgentTeamsStrategy implements MergeStrategy {
       content = await fs.readFile(mergePlanPath, "utf-8");
     } catch {
       throw new MergeError(
-        "Agent-teams session did not write the merged plan file",
+        `Agent-teams session did not write the merged plan file at ${mergePlanPath}`,
       );
     }
 

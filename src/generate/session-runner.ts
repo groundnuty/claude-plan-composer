@@ -59,7 +59,8 @@ export async function extractPlan(
   if (!content) {
     throw new PlanExtractionError(
       variant.name,
-      "No plan file and no text content",
+      `No plan file found at ${planPath} and no text content in assistant messages. ` +
+        "Ensure your prompt instructs the agent to use the Write tool to save output.",
     );
   }
 

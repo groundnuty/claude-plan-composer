@@ -30,6 +30,13 @@ describe("buildOutputInstruction", () => {
       expect(result).toContain(`${i}.`);
     }
   });
+
+  it("resolves relative runDir to absolute path", () => {
+    const result = buildOutputInstruction("generated-plans/plan/run-001", "v1");
+    const match = result.match(/Write the COMPLETE plan.*?\n\s+(.+\.md)/);
+    expect(match).toBeTruthy();
+    expect(path.isAbsolute(match![1]!)).toBe(true);
+  });
 });
 
 describe("buildPrompts", () => {
@@ -179,6 +186,41 @@ describe("buildPrompts", () => {
     for (const vp of results) {
       const expected = path.join(RUN_DIR, `plan-${vp.variant.name}.md`);
       expect(vp.planPath).toBe(expected);
+    }
+  });
+
+  it("produces absolute planPath even when runDir is relative", () => {
+    const relativeRunDir = "generated-plans/plan/run-001";
+    const results = buildPrompts(
+      basePrompt,
+      undefined,
+      variants,
+      new Map(),
+      defaultConfig,
+      relativeRunDir,
+    );
+    for (const vp of results) {
+      expect(path.isAbsolute(vp.planPath)).toBe(true);
+    }
+  });
+
+  it("embeds absolute path in output instruction even when runDir is relative", () => {
+    const relativeRunDir = "generated-plans/plan/run-001";
+    const results = buildPrompts(
+      basePrompt,
+      undefined,
+      variants,
+      new Map(),
+      defaultConfig,
+      relativeRunDir,
+    );
+    for (const vp of results) {
+      // The fullPrompt must contain an absolute path for the Write tool
+      const match = vp.fullPrompt.match(
+        /Write the COMPLETE plan to this exact file path.*?\n\s+(.+\.md)/,
+      );
+      expect(match).toBeTruthy();
+      expect(path.isAbsolute(match![1]!)).toBe(true);
     }
   });
 });

@@ -166,7 +166,7 @@ export class SubagentDebateStrategy implements MergeStrategy {
       content = await fs.readFile(mergePlanPath, "utf-8");
     } catch {
       throw new MergeError(
-        "Subagent-debate session did not write the merged plan file",
+        `Subagent-debate session did not write the merged plan file at ${mergePlanPath}`,
       );
     }
 
