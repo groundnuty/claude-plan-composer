@@ -7,6 +7,8 @@ export {
   readEvalResult,
   writeVerifyResult,
   writePreMortemResult,
+  writeDiversityResult,
+  readDiversityResult,
 } from "./io.js";
 export {
   resolveGenerateConfig,
