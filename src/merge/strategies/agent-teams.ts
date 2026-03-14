@@ -116,6 +116,7 @@ export class AgentTeamsStrategy implements MergeStrategy {
             "Write",
             "Glob",
             "Grep",
+            "Agent",
             "TeamCreate",
             "SendMessage",
             "TeamDelete",
