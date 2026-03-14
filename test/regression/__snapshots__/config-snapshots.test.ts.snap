@@ -4,6 +4,7 @@ exports[`resolveGenerateConfig snapshots > fixture YAML + CLI overrides 1`] = `
 {
   "additionalDirs": [],
   "autoLenses": false,
+  "diversityThreshold": 0.3,
   "lensCount": 4,
   "lensModel": "haiku",
   "lensTimeoutMs": 120000,
@@ -43,6 +44,7 @@ exports[`resolveGenerateConfig snapshots > fixture YAML + env overrides 1`] = `
 {
   "additionalDirs": [],
   "autoLenses": false,
+  "diversityThreshold": 0.3,
   "lensCount": 4,
   "lensModel": "haiku",
   "lensTimeoutMs": 120000,
@@ -82,6 +84,7 @@ exports[`resolveGenerateConfig snapshots > fixture YAML only 1`] = `
 {
   "additionalDirs": [],
   "autoLenses": false,
+  "diversityThreshold": 0.3,
   "lensCount": 4,
   "lensModel": "haiku",
   "lensTimeoutMs": 120000,
@@ -121,6 +124,7 @@ exports[`resolveGenerateConfig snapshots > per-variant prompt_file YAML 1`] = `
 {
   "additionalDirs": [],
   "autoLenses": false,
+  "diversityThreshold": 0.3,
   "lensCount": 4,
   "lensModel": "haiku",
   "lensTimeoutMs": 120000,
