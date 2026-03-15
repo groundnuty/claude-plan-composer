@@ -81,7 +81,7 @@ export function parseEvalResponse(text: string): RawEvalResponse {
   try {
     parsed = JSON.parse(jsonText);
   } catch (err) {
-    throw new Error(`parseEvalResponse: invalid JSON — ${String(err)}`);
+    throw new Error(`parseEvalResponse: invalid JSON — ${String(err)}`, { cause: err });
   }
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {

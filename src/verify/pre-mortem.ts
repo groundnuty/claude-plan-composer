@@ -136,7 +136,7 @@ export function parsePreMortemResponse(text: string): PreMortemResult {
   try {
     parsed = JSON.parse(jsonText);
   } catch (err) {
-    throw new Error(`parsePreMortemResponse: invalid JSON — ${String(err)}`);
+    throw new Error(`parsePreMortemResponse: invalid JSON — ${String(err)}`, { cause: err });
   }
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
