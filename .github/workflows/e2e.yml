@@ -14,6 +14,15 @@ jobs:
 
       - uses: jetify-com/devbox-install-action@a03cbe14440d2f364ea862b1ba2e795637028b16 # v0.12.0
 
+      - name: Check API key is configured
+        env:
+          HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" != "true" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set. Add it in Settings > Secrets > Actions."
+            exit 1
+          fi
+
       - name: Run E2E tests
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
