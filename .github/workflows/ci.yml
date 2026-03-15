@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: jetify-com/devbox-install-action@a03cbe14440d2f364ea862b1ba2e795637028b16 # v0.12.0
+      - uses: jetify-com/devbox-install-action@a0d2d53632934ae004f878c840055956d9f741b0 # v0.14.0
 
       - name: Build, lint, and test
         run: devbox run -- make -f dev.mk check
@@ -47,4 +47,4 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - uses: actions/dependency-review-action@da24556b548a50705dd671f47852e44be4dce4b4 # v4.7.1
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
