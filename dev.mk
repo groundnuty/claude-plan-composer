@@ -1,6 +1,9 @@
-.PHONY: check test lint build clean test-e2e eval eval-full eval-save eval-full-save eval-compare eval-full-compare
+.PHONY: install check test lint build clean test-e2e eval eval-full eval-save eval-full-save eval-compare eval-full-compare
 
-check: build lint test
+install:
+	devbox run -- npm ci
+
+check: install build lint test
 
 build:
 	devbox run -- npx tsc --noEmit
