@@ -4,7 +4,7 @@
   "features": {
     "ghcr.io/jetify-com/devbox/devbox:latest": {}
   },
-  "postCreateCommand": "devbox install",
+  "postCreateCommand": "devbox install && devbox run -- npm install",
   "customizations": {
     "vscode": {
       "extensions": [
