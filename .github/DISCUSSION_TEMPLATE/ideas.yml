@@ -1,0 +1,18 @@
+title: "[Idea]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: "Share your idea for improving Claude Plan Composer."
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: What would you like CPC to be able to do?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why would this be useful? What's your use case?
