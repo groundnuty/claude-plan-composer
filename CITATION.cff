@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Claude Plan Composer: Best-of-N Plan Generation with Prompt Variation"
+authors:
+  - name: groundnuty
+type: software
+repository-code: "https://github.com/groundnuty/claude-plan-composer"
+license: AGPL-3.0

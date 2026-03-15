@@ -1,5 +1,9 @@
 # claude-plan-composer
 
+[![CI](https://github.com/groundnuty/claude-plan-composer/actions/workflows/ci.yml/badge.svg)](https://github.com/groundnuty/claude-plan-composer/actions/workflows/ci.yml)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
+
 TypeScript SDK for generating, evaluating, and merging plans using the Claude Agent SDK. Generates multiple plan variants in parallel using different analytical perspectives, then merges the best elements into a single plan via structured debate.
 
 ## Quick Start

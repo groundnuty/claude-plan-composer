@@ -1,0 +1,41 @@
+name: Plan Quality Issue
+description: Report a problem with generated or merged plan quality
+labels: [plan-quality]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What was wrong with the plan output?
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Pipeline Stage
+      options:
+        - Generate
+        - Evaluate
+        - Merge
+        - Verify
+    validations:
+      required: true
+  - type: textarea
+    id: prompt
+    attributes:
+      label: Input Prompt
+      description: The prompt or prompt file used (redact sensitive content)
+    validations:
+      required: true
+  - type: textarea
+    id: config
+    attributes:
+      label: Configuration
+      description: Relevant config (model, variants, strategy, lenses)
+      render: yaml
+  - type: textarea
+    id: output
+    attributes:
+      label: Plan Output
+      description: The problematic plan output (or relevant excerpt)
+      render: markdown

@@ -1,0 +1,15 @@
+{
+  "name": "Claude Plan Composer",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/jetify-com/devbox/devbox:latest": {}
+  },
+  "postCreateCommand": "devbox install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint"
+      ]
+    }
+  }
+}
