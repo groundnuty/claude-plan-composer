@@ -1,3 +1,4 @@
+import * as os from "node:os";
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -24,7 +25,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const fixturesDir = path.resolve(__dirname, "..", "fixtures");
 
-const TMPDIR = process.env["TMPDIR"] ?? "/private/tmp/claude-501";
+const TMPDIR = process.env["TMPDIR"] ?? os.tmpdir();
 
 let tmpDir: string;
 

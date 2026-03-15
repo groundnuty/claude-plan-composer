@@ -1,3 +1,4 @@
+import * as os from "node:os";
 import { describe, it, expect, afterEach } from "vitest";
 import * as http from "node:http";
 import * as fs from "node:fs";
@@ -5,7 +6,7 @@ import * as path from "node:path";
 import { StatusServer } from "../../src/monitor/status-server.js";
 import { StatusCollector } from "../../src/monitor/status-collector.js";
 
-const TMPDIR = process.env["TMPDIR"] ?? "/private/tmp/claude-501";
+const TMPDIR = process.env["TMPDIR"] ?? os.tmpdir();
 
 function httpGet(socketPath: string, urlPath: string): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {

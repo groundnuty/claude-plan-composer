@@ -1,9 +1,10 @@
+import * as os from "node:os";
 import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { parseNdjsonLog } from "../../src/monitor/ndjson-parser.js";
 
-const TMPDIR = process.env["TMPDIR"] ?? "/private/tmp/claude-501";
+const TMPDIR = process.env["TMPDIR"] ?? os.tmpdir();
 
 describe("parseNdjsonLog", () => {
   let tmpFile: string;

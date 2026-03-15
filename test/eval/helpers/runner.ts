@@ -1,3 +1,4 @@
+import * as os from "node:os";
 import * as path from "node:path";
 import {
   resolveGenerateConfig,
@@ -65,7 +66,7 @@ export async function hasClaudeAuth(): Promise<boolean> {
  * Note: does not create the directory — generate() creates it with mkdir({recursive: true}).
  */
 export function makeTempOutputDir(prefix: string): string {
-  const tmpBase = process.env["TMPDIR"] ?? "/private/tmp/claude-501";
+  const tmpBase = process.env["TMPDIR"] ?? os.tmpdir();
   return path.join(
     tmpBase,
     `eval-${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`,

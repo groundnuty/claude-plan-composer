@@ -1,10 +1,11 @@
+import * as os from "node:os";
 import { describe, it, expect, afterEach } from "vitest";
 import * as http from "node:http";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { discoverSockets, fetchStatus } from "../../src/monitor/process-discovery.js";
 
-const TMPDIR = process.env["TMPDIR"] ?? "/private/tmp/claude-501";
+const TMPDIR = process.env["TMPDIR"] ?? os.tmpdir();
 
 describe("discoverSockets", () => {
   it("finds cpc-*.sock files in tmpdir", async () => {

@@ -1,3 +1,4 @@
+import * as os from "node:os";
 /**
  * E2E pipeline test: generate -> merge (simple/holistic)
  *
@@ -18,7 +19,7 @@ import {
   MergeConfigSchema,
 } from "../../src/types/config.js";
 
-const TMPDIR = process.env["TMPDIR"] ?? "/private/tmp/claude-501";
+const TMPDIR = process.env["TMPDIR"] ?? os.tmpdir();
 const outputDir = path.join(
   TMPDIR,
   `e2e-pipeline-${Date.now()}-${Math.random().toString(36).slice(2)}`,

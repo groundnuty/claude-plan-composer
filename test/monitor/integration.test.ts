@@ -1,3 +1,4 @@
+import * as os from "node:os";
 import { describe, it, expect, afterEach } from "vitest";
 import * as path from "node:path";
 import { StatusCollector } from "../../src/monitor/status-collector.js";
@@ -5,7 +6,7 @@ import { StatusServer } from "../../src/monitor/status-server.js";
 import { fetchStatus } from "../../src/monitor/process-discovery.js";
 import { renderTable } from "../../src/monitor/table-renderer.js";
 
-const TMPDIR = process.env["TMPDIR"] ?? "/private/tmp/claude-501";
+const TMPDIR = process.env["TMPDIR"] ?? os.tmpdir();
 
 describe("monitor integration", () => {
   let server: StatusServer | undefined;
